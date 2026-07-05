@@ -215,8 +215,10 @@
   );
 
   // ---- page views (incl. SPA route changes) -----------------------------
+  var ended = false;
   function pageview() {
     maxDepth = 0;
+    ended = false;
     push({ type: "pageview", title: document.title });
   }
   ["pushState", "replaceState"].forEach(function (m) {
@@ -231,6 +233,8 @@
 
   // ---- lifecycle ---------------------------------------------------------
   function endpage(useBeacon) {
+    if (ended) return flush(useBeacon);
+    ended = true;
     push({ type: "scroll", depth: maxDepth });
     push({ type: "session_end", depth: maxDepth });
     flush(useBeacon);
