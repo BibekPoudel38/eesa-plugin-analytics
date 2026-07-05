@@ -1,5 +1,6 @@
 import "server-only";
 import { allEvents } from "./store";
+import { recordingIds } from "./recordings";
 import type { StoredEvent } from "./types";
 import type {
   Kpi,
@@ -439,32 +440,42 @@ export function liveHeatPages(): HeatPage[] {
 
 // ---- sessions list --------------------------------------------------------
 
+function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
+  const durationSec = Math.round((s.lastTs - s.firstTs) / 1000);
+  const outcome: SessionRow["outcome"] = s.converted
+    ? "Converted"
+    : s.pageviews.length <= 1 && durationSec < 15
+      ? "Bounced"
+      : "Browsing";
+  return {
+    id: "s_" + s.id.slice(-5),
+    user: shortId(s.visitorId),
+    anon: true,
+    location: "—",
+    device: s.device,
+    browser: s.browser,
+    durationSec,
+    pages: s.paths.length,
+    events: s.events.length,
+    rageClicks: s.rage,
+    startedMinutesAgo: Math.max(0, (now - s.firstTs) / 60000),
+    outcome,
+    path: s.paths.slice(0, 6),
+    replayId: s.id,
+    hasRecording: recs.has(s.id),
+  };
+}
+
 export function liveSessions(now = Date.now()): SessionRow[] {
+  const recs = recordingIds();
   return sessionize(allEvents())
     .slice(0, 24)
-    .map((s) => {
-      const durationSec = Math.round((s.lastTs - s.firstTs) / 1000);
-      const outcome: SessionRow["outcome"] = s.converted
-        ? "Converted"
-        : s.pageviews.length <= 1 && durationSec < 15
-          ? "Bounced"
-          : "Browsing";
-      return {
-        id: "s_" + s.id.slice(-5),
-        user: shortId(s.visitorId),
-        anon: true,
-        location: "—",
-        device: s.device,
-        browser: s.browser,
-        durationSec,
-        pages: s.paths.length,
-        events: s.events.length,
-        rageClicks: s.rage,
-        startedMinutesAgo: Math.max(0, (now - s.firstTs) / 60000),
-        outcome,
-        path: s.paths.slice(0, 6),
-      };
-    });
+    .map((s) => toRow(s, recs, now));
+}
+
+export function liveSessionDetail(id: string, now = Date.now()): SessionRow | null {
+  const s = sessionize(allEvents()).find((x) => x.id === id);
+  return s ? toRow(s, recordingIds(), now) : null;
 }
 
 // ---- events table ---------------------------------------------------------

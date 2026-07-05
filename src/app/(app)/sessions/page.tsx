@@ -126,13 +126,21 @@ export default async function SessionsPage({
               key={s.id}
               className="flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5"
             >
-              <Filmstrip session={s} />
+              <Link
+                href={{ pathname: `/sessions/${s.replayId ?? s.id}` }}
+                aria-label={`Replay ${s.user}'s session`}
+              >
+                <Filmstrip session={s} />
+              </Link>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-foreground">
+                  <Link
+                    href={{ pathname: `/sessions/${s.replayId ?? s.id}` }}
+                    className="truncate font-medium text-foreground hover:text-ember"
+                  >
                     {s.user}
-                  </span>
+                  </Link>
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[0.68rem] font-medium",
@@ -141,6 +149,12 @@ export default async function SessionsPage({
                   >
                     {s.outcome}
                   </span>
+                  {s.hasRecording && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-ember/12 px-1.5 py-0.5 font-mono text-[0.62rem] font-semibold uppercase tracking-wide text-ember">
+                      <span className="size-1.5 rounded-full bg-ember" />
+                      Rec
+                    </span>
+                  )}
                   {s.rageClicks > 0 && (
                     <span className="inline-flex items-center gap-0.5 rounded-full bg-ember/12 px-1.5 py-0.5 font-mono text-[0.68rem] text-ember">
                       <Zap className="size-3 fill-current" />

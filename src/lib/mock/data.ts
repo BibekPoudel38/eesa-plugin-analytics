@@ -277,6 +277,8 @@ export type SessionRow = {
   startedMinutesAgo: number;
   outcome: "Converted" | "Bounced" | "Browsing";
   path: string[]; // page journey
+  replayId?: string; // full session id for the replay URL (live only)
+  hasRecording?: boolean; // an rrweb replay is available
 };
 
 export const sessions: SessionRow[] = [

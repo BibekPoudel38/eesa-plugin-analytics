@@ -59,6 +59,12 @@ export function getSessionsData() {
   return { live: true, sessions: live.liveSessions() };
 }
 
+export function getSessionDetail(id: string) {
+  const liveRow = live.liveSessionDetail(id);
+  if (liveRow) return liveRow;
+  return mock.sessions.find((s) => s.id === id) ?? null;
+}
+
 export function getFunnelsData() {
   return {
     live: hasLiveData(),

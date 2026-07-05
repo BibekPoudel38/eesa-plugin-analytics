@@ -25,10 +25,14 @@
     })();
   var cfg = window.ChupsConfig || {};
   var siteId = (me && me.getAttribute("data-site")) || cfg.site || "default";
+  var origin = me ? new URL(me.src).origin : "";
   var endpoint =
     (me && me.getAttribute("data-endpoint")) ||
     cfg.endpoint ||
-    (me ? new URL(me.src).origin + "/api/collect" : "/api/collect");
+    (origin ? origin + "/api/collect" : "/api/collect");
+  var recEndpoint = origin ? origin + "/api/rec" : "/api/rec";
+  var rrwebSrc = origin + "/rrweb.min.js";
+  var doRecord = !(me && me.getAttribute("data-record") === "off");
 
   // ---- identity: visitor (persistent) + session (30-min sliding) ---------
   var SESSION_MS = 30 * 60 * 1000;
@@ -231,8 +235,73 @@
   });
   window.addEventListener("popstate", pageview);
 
+  // ---- session recording (rrweb DOM replay) -----------------------------
+  var recBuf = [];
+  var recTimer = null;
+  function flushRec(useBeacon) {
+    if (recTimer) { clearTimeout(recTimer); recTimer = null; }
+    if (!recBuf.length) return;
+    var payload = JSON.stringify({
+      sessionId: sessionId(),
+      siteId: siteId,
+      device: device(),
+      path: path(),
+      events: recBuf.splice(0),
+    });
+    try {
+      if (useBeacon && navigator.sendBeacon && payload.length < 60000) {
+        navigator.sendBeacon(recEndpoint, payload);
+      } else {
+        // keepalive caps bodies at 64KB — the DOM snapshot is bigger, so only
+        // use keepalive during unload (small tail); normal flushes go without.
+        fetch(recEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: payload,
+          keepalive: !!useBeacon,
+          mode: "cors",
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  function scheduleRec() {
+    if (recTimer) return;
+    recTimer = setTimeout(flushRec, 4000);
+  }
+  function startRecording() {
+    if (!window.rrweb || !window.rrweb.record) return;
+    window.rrweb.record({
+      emit: function (ev) {
+        recBuf.push(ev);
+        if (ev.type === 2) {
+          // full DOM snapshot (large) — send immediately so replay has a base
+          // even if the visit is very short
+          flushRec();
+        } else if (recBuf.length >= 50) {
+          flushRec();
+        } else {
+          scheduleRec();
+        }
+      },
+      sampling: { mousemove: 50, scroll: 120, input: "last" },
+      recordCanvas: false,
+      collectFonts: false,
+    });
+  }
+  if (doRecord) {
+    if (window.rrweb) startRecording();
+    else {
+      var sc = document.createElement("script");
+      sc.src = rrwebSrc;
+      sc.async = true;
+      sc.onload = startRecording;
+      (document.head || document.documentElement).appendChild(sc);
+    }
+  }
+
   // ---- lifecycle ---------------------------------------------------------
   function endpage(useBeacon) {
+    flushRec(useBeacon);
     if (ended) return flush(useBeacon);
     ended = true;
     push({ type: "scroll", depth: maxDepth });
