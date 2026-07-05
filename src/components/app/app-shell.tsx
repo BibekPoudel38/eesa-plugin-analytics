@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Menu, Search, ChevronDown, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { navItems } from "./nav";
+import { navItems, setupItems, type NavItem } from "./nav";
 import { workspace } from "@/lib/mock/data";
 import { ContourMark, Wordmark } from "@/components/brand/contour-mark";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -22,6 +22,58 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
+function NavGroup({
+  label,
+  items,
+  pathname,
+  onNavigate,
+}: {
+  label: string;
+  items: NavItem[];
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
+      <p className="px-3 pb-2 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {items.map((item) => {
+          const active = isActive(pathname, item.href);
+          const Icon = item.icon;
+          return (
+            <li key={item.href}>
+              <Link
+                href={item.href}
+                onClick={onNavigate}
+                className={cn(
+                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                    : "text-foreground/75 hover:bg-black/[0.04] hover:text-foreground",
+                )}
+              >
+                {active && (
+                  <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-sidebar-primary" />
+                )}
+                <Icon
+                  className={cn(
+                    "size-[1.05rem] shrink-0",
+                    active ? "text-sidebar-primary" : "text-muted-foreground",
+                  )}
+                  strokeWidth={2}
+                />
+                {item.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
@@ -33,41 +85,10 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex-1 px-3 py-4">
-        <p className="px-3 pb-2 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
-          Analyze
-        </p>
-        <ul className="flex flex-col gap-0.5">
-          {navItems.map((item) => {
-            const active = isActive(pathname, item.href);
-            const Icon = item.icon;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                      : "text-foreground/75 hover:bg-black/[0.04] hover:text-foreground",
-                  )}
-                >
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-sidebar-primary" />
-                  )}
-                  <Icon
-                    className={cn(
-                      "size-[1.05rem] shrink-0",
-                      active ? "text-sidebar-primary" : "text-muted-foreground",
-                    )}
-                    strokeWidth={2}
-                  />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <NavGroup label="Analyze" items={navItems} pathname={pathname} onNavigate={onNavigate} />
+        <div className="mt-5">
+          <NavGroup label="Setup" items={setupItems} pathname={pathname} onNavigate={onNavigate} />
+        </div>
       </nav>
 
       <div className="p-3">

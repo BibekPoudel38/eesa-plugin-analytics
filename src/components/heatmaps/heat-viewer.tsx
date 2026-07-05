@@ -45,9 +45,11 @@ function ScrollOverlay({ page }: { page: HeatPage }) {
 export function HeatViewer({
   page,
   mode,
+  domain = "sprout.app",
 }: {
   page: HeatPage;
   mode: HeatMode;
+  domain?: string;
 }) {
   const DeviceIcon = page.device === "Mobile" ? Smartphone : Monitor;
   return (
@@ -61,7 +63,7 @@ export function HeatViewer({
         </div>
         <div className="mx-auto flex items-center gap-1.5 rounded-md bg-card px-3 py-1 font-mono text-xs text-muted-foreground">
           <Lock className="size-3" />
-          sprout.app
+          {domain}
           <span className="text-foreground">{page.path}</span>
         </div>
         <span className="flex items-center gap-1 font-mono text-[0.68rem] text-muted-foreground">

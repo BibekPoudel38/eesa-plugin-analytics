@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { HeatViewer, type HeatMode } from "@/components/heatmaps/heat-viewer";
-import { heatPages } from "@/lib/mock/data";
+import { getHeatData } from "@/lib/data";
 import { compactNumber, percent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -24,9 +24,10 @@ export default async function HeatmapsPage({
   searchParams: Promise<{ p?: string; mode?: string }>;
 }) {
   const sp = await searchParams;
-  const page = heatPages.find((h) => h.path === sp.p) ?? heatPages[0];
+  const { live, pages } = getHeatData();
+  const page = pages.find((h) => h.path === sp.p) ?? pages[0];
   const mode = (modes.find((m) => m.key === sp.mode)?.key ?? "click") as HeatMode;
-  const maxClicks = Math.max(...page.elements.map((e) => e.clicks));
+  const maxClicks = Math.max(1, ...page.elements.map((e) => e.clicks));
 
   return (
     <div className="space-y-6">
@@ -57,7 +58,11 @@ export default async function HeatmapsPage({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* stage */}
         <div className="lg:col-span-8">
-          <HeatViewer page={page} mode={mode} />
+          <HeatViewer
+            page={page}
+            mode={mode}
+            domain={live ? "chups-mom2mom-v2.vercel.app" : "sprout.app"}
+          />
           <p className="mt-3 px-1 text-xs text-muted-foreground">
             Showing an aggregate of{" "}
             <span className="tabular font-mono text-foreground">
@@ -74,7 +79,7 @@ export default async function HeatmapsPage({
           <Panel>
             <PanelHead title="Pages" sub="Pick a page to inspect" />
             <ul className="p-2">
-              {heatPages.map((h) => {
+              {pages.map((h) => {
                 const active = h.path === page.path;
                 return (
                   <li key={h.path}>

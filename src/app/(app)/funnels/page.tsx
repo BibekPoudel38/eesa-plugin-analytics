@@ -2,7 +2,8 @@ import { PageHeader, Eyebrow, DeltaPill } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { FunnelChart } from "@/components/funnels/funnel-chart";
 import { Sparkline } from "@/components/charts/sparkline";
-import { funnel, events, retention } from "@/lib/mock/data";
+import { DataBadge } from "@/components/app/data-badge";
+import { getFunnelsData } from "@/lib/data";
 import { compactNumber, fullNumber, percent } from "@/lib/format";
 
 function cohortBg(v: number | null) {
@@ -12,6 +13,7 @@ function cohortBg(v: number | null) {
 }
 
 export default function FunnelsPage() {
+  const { live, funnel, events, retention } = getFunnelsData();
   const overall =
     (funnel.steps[funnel.steps.length - 1].users / funnel.steps[0].users) * 100;
 
@@ -21,6 +23,7 @@ export default function FunnelsPage() {
         eyebrow="Conversion · Funnels & events"
         title="Funnels & events"
         description="Follow the path from first visit to activation, and watch every event that fires along the way."
+        actions={<DataBadge live={live} />}
       />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -28,7 +31,7 @@ export default function FunnelsPage() {
         <Panel className="lg:col-span-7">
           <PanelHead
             title={funnel.name}
-            sub={funnel.window}
+            sub={live ? `${funnel.window} · demo` : funnel.window}
             right={
               <div className="text-right">
                 <div className="tabular font-display text-lg font-bold leading-none text-foreground">
@@ -47,7 +50,10 @@ export default function FunnelsPage() {
 
         {/* retention */}
         <Panel className="lg:col-span-5">
-          <PanelHead title="Weekly retention" sub="% of cohort still active" />
+          <PanelHead
+            title="Weekly retention"
+            sub={live ? "% of cohort still active · demo" : "% of cohort still active"}
+          />
           <div className="overflow-x-auto p-4">
             <table className="w-full border-separate border-spacing-1 text-center">
               <thead>

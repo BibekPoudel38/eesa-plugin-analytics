@@ -1,17 +1,11 @@
 import { PageHeader } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
+import { DataBadge } from "@/components/app/data-badge";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { AreaChart } from "@/components/charts/area-chart";
 import { BarList } from "@/components/charts/bar-list";
 import { Donut } from "@/components/charts/donut";
-import {
-  kpis,
-  trend,
-  sources,
-  topPages,
-  devices,
-  activity,
-} from "@/lib/mock/data";
+import { getOverview, getLiveStatus } from "@/lib/data";
 import { compactNumber, duration, percent, relativeTime } from "@/lib/format";
 
 const deviceColors = ["var(--teal)", "var(--ember)", "var(--amber)"];
@@ -23,25 +17,21 @@ function bounceTone(v: number) {
 }
 
 export default function OverviewPage() {
+  const { live, kpis, trend, sources, topPages, devices, activity } = getOverview();
+  const status = getLiveStatus();
   const totalSource = sources.reduce((s, x) => s + x.value, 0);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sprout · Production"
+        eyebrow={live ? "mom2mom · Production" : "Sprout · Demo"}
         title="Overview"
-        description="How sprout.app performed over the last 30 days."
-        actions={
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-pine opacity-60" />
-              <span className="relative inline-flex size-2 rounded-full bg-pine" />
-            </span>
-            <span className="tabular font-mono text-xs text-muted-foreground">
-              12 online now
-            </span>
-          </span>
+        description={
+          live
+            ? "Real-time behaviour from your tracked site."
+            : "How sprout.app performed over the last 30 days."
         }
+        actions={<DataBadge live={live} eventCount={status.eventCount} />}
       />
 
       {/* KPI row */}
@@ -169,7 +159,7 @@ export default function OverviewPage() {
                   value: d.value,
                   color: deviceColors[i],
                 }))}
-                centerTop="58%"
+                centerTop={`${devices.find((d) => d.name === "Desktop")?.value ?? 0}%`}
                 centerBottom="desktop"
               />
               <ul className="flex-1 space-y-2.5">

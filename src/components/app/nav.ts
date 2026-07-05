@@ -1,4 +1,11 @@
-import { LayoutGrid, Target, Clapperboard, Filter, type LucideIcon } from "lucide-react";
+import {
+  LayoutGrid,
+  Target,
+  Clapperboard,
+  Filter,
+  Code2,
+  type LucideIcon,
+} from "lucide-react";
 
 export type NavItem = {
   href: string;
@@ -12,4 +19,8 @@ export const navItems: NavItem[] = [
   { href: "/heatmaps", label: "Heatmaps", icon: Target, hint: "Where clicks & attention pool" },
   { href: "/sessions", label: "Sessions", icon: Clapperboard, hint: "Replay real visits" },
   { href: "/funnels", label: "Funnels & events", icon: Filter, hint: "Conversion & event stream" },
+];
+
+export const setupItems: NavItem[] = [
+  { href: "/install", label: "Install", icon: Code2, hint: "Add tracking to your site" },
 ];

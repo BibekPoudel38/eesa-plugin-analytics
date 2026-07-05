@@ -3,7 +3,9 @@ import { Fragment } from "react";
 import { Play, ChevronRight, Zap, Monitor, Smartphone, Tablet } from "lucide-react";
 import { PageHeader, Eyebrow } from "@/components/app/primitives";
 import { Panel } from "@/components/app/panel";
-import { sessions, type SessionRow } from "@/lib/mock/data";
+import { DataBadge } from "@/components/app/data-badge";
+import { type SessionRow } from "@/lib/mock/data";
+import { getSessionsData } from "@/lib/data";
 import { duration, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +68,7 @@ export default async function SessionsPage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const sp = await searchParams;
+  const { live, sessions } = getSessionsData();
   const active = filters.find((f) => f.key === sp.f)?.key ?? "all";
   const rows = sessions.filter((s) => matches(s, active));
 
@@ -81,11 +84,12 @@ export default async function SessionsPage({
         eyebrow="Behavior · Session replay"
         title="Sessions"
         description="Replay real visits. Spot where people hesitate, rage-click, or drop."
+        actions={<DataBadge live={live} />}
       />
 
       <Panel>
         <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
-          <Stat label="Sessions" value={String(sessions.length * 285)} />
+          <Stat label="Sessions" value={String(sessions.length)} />
           <Stat label="Avg. duration" value={duration(avg)} />
           <Stat label="With rage clicks" value={`${withRage}`} />
           <Stat label="Converted" value={`${converted}`} />
