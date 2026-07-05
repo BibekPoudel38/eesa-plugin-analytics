@@ -1,26 +1,181 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
+
+  /* Brand tokens — cartography of attention */
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-teal: var(--teal);
+  --color-amber: var(--amber);
+  --color-pine: var(--pine);
+  --color-clay: var(--clay);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --radius: 0.5rem;
+
+  /* Warm paper canvas (cooler than cream), near-black ink with a faint green cast */
+  --background: #f7f6f2;
+  --foreground: #161a17;
+  --card: #ffffff;
+  --card-foreground: #161a17;
+  --popover: #ffffff;
+  --popover-foreground: #161a17;
+
+  /* Ember — the hotspot signal, used sparingly */
+  --primary: #ef5330;
+  --primary-foreground: #fff6f2;
+
+  --secondary: #efece4;
+  --secondary-foreground: #2a302c;
+  --muted: #f0eee7;
+  --muted-foreground: #6c7671;
+  --accent: #eceae2;
+  --accent-foreground: #2a302c;
+  --destructive: #d64545;
+  --border: #e6e2d9;
+  --input: #e6e2d9;
+  --ring: #ef5330;
+
+  /* Data / chart family — teal (cool) leads, ember (hot) counters */
+  --chart-1: #0e8c86;
+  --chart-2: #ef5330;
+  --chart-3: #f2ac3a;
+  --chart-4: #2f7a5b;
+  --chart-5: #b6708f;
+
+  /* Named brand tokens */
+  --ember: #ef5330;
+  --ember-soft: #fbe6df;
+  --teal: #0e8c86;
+  --amber: #f2ac3a;
+  --pine: #2f7a5b;
+  --clay: #b6708f;
+
+  /* Heat scale — the signature gradient (cold → hot) */
+  --heat-0: #2f6fb0;
+  --heat-1: #2f9c9c;
+  --heat-2: #8bbf4f;
+  --heat-3: #f2ac3a;
+  --heat-4: #ef5330;
+
+  /* Sidebar — a distinct warm surface so the rail reads without a hard border */
+  --sidebar: #f1eee6;
+  --sidebar-foreground: #161a17;
+  --sidebar-primary: #ef5330;
+  --sidebar-primary-foreground: #fff6f2;
+  --sidebar-accent: #fbe6df;
+  --sidebar-accent-foreground: #b23a1c;
+  --sidebar-border: #e2ded4;
+  --sidebar-ring: #ef5330;
+}
+
+.dark {
+  --background: #14171a;
+  --foreground: #ecece6;
+  --card: #1c2024;
+  --card-foreground: #ecece6;
+  --popover: #1c2024;
+  --popover-foreground: #ecece6;
+  --primary: #ff6a45;
+  --primary-foreground: #1a0f0a;
+  --secondary: #262b2e;
+  --secondary-foreground: #ecece6;
+  --muted: #262b2e;
+  --muted-foreground: #9aa39d;
+  --accent: #262b2e;
+  --accent-foreground: #ecece6;
+  --destructive: #e5484d;
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: #ff6a45;
+  --chart-1: #2fb0a8;
+  --chart-2: #ff6a45;
+  --chart-3: #f2ac3a;
+  --chart-4: #4fa87e;
+  --chart-5: #c98aa6;
+  --ember: #ff6a45;
+  --ember-soft: #3a201a;
+  --teal: #2fb0a8;
+  --amber: #f2ac3a;
+  --pine: #4fa87e;
+  --clay: #c98aa6;
+  --heat-0: #3f7fc0;
+  --heat-1: #2fb0b0;
+  --heat-2: #9bcf5f;
+  --heat-3: #f2ac3a;
+  --heat-4: #ff6a45;
+  --sidebar: #181b1e;
+  --sidebar-foreground: #ecece6;
+  --sidebar-primary: #ff6a45;
+  --sidebar-primary-foreground: #1a0f0a;
+  --sidebar-accent: #2a1f1a;
+  --sidebar-accent-foreground: #ff8a68;
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: #ff6a45;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Tabular, aligned figures wherever we show data */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 }
