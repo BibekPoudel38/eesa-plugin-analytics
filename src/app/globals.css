@@ -9,8 +9,9 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-display: var(--font-display);
-  --font-heading: var(--font-display);
+  /* Inter across the whole portal — display & headings use the sans stack too */
+  --font-display: var(--font-sans);
+  --font-heading: var(--font-sans);
 
   /* Brand tokens — cartography of attention */
   --color-ember: var(--ember);
@@ -56,13 +57,34 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  --animate-shimmer: shimmer 2.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
-  /* Warm paper canvas (cooler than cream), near-black ink with a faint green cast */
-  --background: #f7f6f2;
+  /* Elevation — warm, green-black tinted shadows so cards lift off the paper
+     without the cold grey haze of a default drop shadow. Dark-mode adapts. */
+  --shadow-tint: 22 30 24;
+  --shadow-card: 0 1px 2px rgb(var(--shadow-tint) / 0.04),
+    0 4px 10px -5px rgb(var(--shadow-tint) / 0.09);
+  --shadow-card-hover: 0 1px 2px rgb(var(--shadow-tint) / 0.05),
+    0 14px 34px -12px rgb(var(--shadow-tint) / 0.22);
+  --shadow-pop: 0 4px 12px -2px rgb(var(--shadow-tint) / 0.10),
+    0 16px 40px -12px rgb(var(--shadow-tint) / 0.24);
+
+  /* White canvas, near-black ink with a faint green cast */
+  --background: #ffffff;
   --foreground: #161a17;
   --card: #ffffff;
   --card-foreground: #161a17;
@@ -118,6 +140,13 @@
 }
 
 .dark {
+  --shadow-tint: 0 0 0;
+  --shadow-card: 0 1px 2px rgb(var(--shadow-tint) / 0.30),
+    0 4px 12px -6px rgb(var(--shadow-tint) / 0.40);
+  --shadow-card-hover: 0 2px 4px rgb(var(--shadow-tint) / 0.35),
+    0 16px 36px -12px rgb(var(--shadow-tint) / 0.55);
+  --shadow-pop: 0 8px 28px -6px rgb(var(--shadow-tint) / 0.55);
+
   --background: #14171a;
   --foreground: #ecece6;
   --card: #1c2024;
@@ -166,16 +195,67 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
-  html {
-    @apply font-sans;
-    -webkit-font-smoothing: antialiased;
+  ::selection {
+    background: color-mix(in srgb, var(--ember) 22%, transparent);
+    color: var(--foreground);
   }
+  /* Slimmer, on-brand scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent)
+      transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+  }
+}
+
+@layer utilities {
   /* Tabular, aligned figures wherever we show data */
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+  /* Gradient ink for hero numbers / wordmarks */
+  .text-gradient-ember {
+    background: linear-gradient(
+      135deg,
+      var(--foreground) 0%,
+      color-mix(in srgb, var(--ember) 55%, var(--foreground)) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  /* Loading shimmer sweep */
+  .shimmer {
+    background: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in srgb, var(--foreground) 6%, transparent) 40%,
+      color-mix(in srgb, var(--foreground) 6%, transparent) 60%,
+      transparent 80%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2.2s linear infinite;
   }
 }

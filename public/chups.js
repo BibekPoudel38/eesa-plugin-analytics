@@ -286,6 +286,10 @@
       sampling: { mousemove: 50, scroll: 120, input: "last" },
       recordCanvas: false,
       collectFonts: false,
+      // Privacy-safe by default: never capture what users type (passwords,
+      // PII, form input). Required before recording any authenticated app.
+      // Opt out per install with data-mask="off" (not recommended).
+      maskAllInputs: !(me && me.getAttribute("data-mask") === "off"),
     });
   }
   if (doRecord) {

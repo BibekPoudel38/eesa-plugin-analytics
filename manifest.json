@@ -1,0 +1,29 @@
+{
+  "manifestVersion": "1.0",
+  "slug": "analytics",
+  "name": "Chups Analytics",
+  "version": "0.1.0",
+  "description": "Product analytics, heatmaps, and session replay for your sites. Paste one snippet per site and see where attention pools and where users fall off — right inside Eesa.",
+  "icon": "https://cdn.eesa.ai/icons/analytics.png",
+  "hostedBy": "self",
+  "developer": { "name": "Chups", "email": "team@eesa.ai" },
+  "auth": { "verify": "eesa-jwks", "gatewayOnly": true },
+  "scopes": ["analytics:read", "analytics:write", "analytics:admin"],
+  "surfaces": {
+    "ui": { "url": "https://analytics.plugins.eesa.ai/app", "embeddable": true },
+    "rest": { "endpoint": "https://analytics.plugins.eesa.ai/api", "hotPath": true },
+    "mcp": {
+      "endpoint": "https://analytics.plugins.eesa.ai/mcp",
+      "transport": "streamable-http",
+      "tools": [
+        { "name": "traffic_summary", "description": "Visitors, pageviews, top sources and devices for a site over a time window (e.g. last 7 days)." },
+        { "name": "top_pages", "description": "The most-visited pages for a site over a time window, with visitors and pageviews." },
+        { "name": "funnel_report", "description": "Conversion rate and per-step drop-off for a named funnel on a site." }
+      ]
+    }
+  },
+  "entitlementKey": "analytics",
+  "roles": [
+    { "key": "admin", "label": "Analytics Admin", "description": "Manage tracked sites, copy install snippets, and view all analytics for the workspace." }
+  ]
+}

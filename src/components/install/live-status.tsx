@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { RotateCcw, Activity } from "lucide-react";
+import { Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Summary = {
@@ -30,36 +30,29 @@ function ago(ts: number, now: number) {
   return `${Math.floor(m / 60)}h ago`;
 }
 
-export function LiveStatus() {
+export function LiveStatus({ siteId }: { siteId: string }) {
   const [data, setData] = useState<Summary | null>(null);
   const [now, setNow] = useState(0);
-  const [resetting, setResetting] = useState(false);
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch("/api/live/summary", { cache: "no-store" });
+      // Cookie-authed + tenant/site scoped (the partitioned session cookie is
+      // replayed automatically on this same-origin fetch).
+      const res = await fetch(`/api/data/status?site=${encodeURIComponent(siteId)}`, {
+        cache: "no-store",
+      });
       if (res.ok) setData(await res.json());
       setNow(Date.now());
     } catch {
       /* ignore transient errors */
     }
-  }, []);
+  }, [siteId]);
 
   useEffect(() => {
     poll();
-    const id = setInterval(poll, 2500);
+    const id = setInterval(poll, 5000);
     return () => clearInterval(id);
   }, [poll]);
-
-  async function reset() {
-    setResetting(true);
-    try {
-      await fetch("/api/live/reset", { method: "POST" });
-      await poll();
-    } finally {
-      setResetting(false);
-    }
-  }
 
   const stats = [
     { label: "Events", value: data?.eventCount ?? 0 },
@@ -69,8 +62,8 @@ export function LiveStatus() {
   const capturing = (data?.eventCount ?? 0) > 0;
 
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+    <div className="flex flex-col rounded-2xl border border-border/70 bg-card shadow-[var(--shadow-card)]">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">Capture status</h3>
@@ -138,24 +131,16 @@ export function LiveStatus() {
           </ul>
         ) : (
           <div className="grid h-[180px] place-items-center px-6 text-center text-sm text-muted-foreground">
-            No events yet. Add the snippet to Mom2Mom, then click around the
-            site — events land here within a few seconds.
+            No events yet. Add the snippet to your site, then click around —
+            events land here within a few seconds.
           </div>
         )}
       </div>
 
       <div className="flex items-center justify-between border-t border-border px-5 py-3">
         <span className="font-mono text-xs text-muted-foreground">
-          Auto-refreshing every 2.5s
+          Auto-refreshing every 5s
         </span>
-        <button
-          onClick={reset}
-          disabled={resetting}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-        >
-          <RotateCcw className={cn("size-3.5", resetting && "animate-spin")} />
-          Reset data
-        </button>
       </div>
     </div>
   );

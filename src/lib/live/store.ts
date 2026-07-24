@@ -1,31 +1,74 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
+import { Redis } from "@upstash/redis";
 import type { Batch, StoredEvent } from "./types";
 
 /**
- * Tiny in-process event store for the local/tunnel demo. Events live in memory
- * (fast to aggregate) and are snapshotted to .data/events.json so a dev-server
- * restart doesn't lose the visits you just captured. Not for production — swap
- * for a real datastore in Phase 3.
+ * Event store with two backends, chosen at runtime:
  *
- * A globalThis singleton keeps a single array alive across Next's HMR reloads
- * and shared between the ingest route handler and the server components.
+ *  • Redis (Upstash)  — when REST creds are present in the env. Events live in a
+ *    single Redis LIST so the collect endpoint and the dashboard share state
+ *    across stateless serverless instances (Vercel). This is the production path.
+ *  • Local file       — no creds (local dev). Events live in an in-process array
+ *    snapshotted to .data/events.json so a dev-server restart keeps recent visits.
+ *
+ * Reads are synchronous over an in-memory array; call `hydrateEvents()` once at
+ * the start of a request to populate it from the active backend, then aggregate.
  */
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DATA_FILE = path.join(DATA_DIR, "events.json");
 const MAX_EVENTS = 50_000; // ring-buffer cap so the demo can't grow unbounded
+const REDIS_KEY = "chups:events";
+
+// ---- backend selection ----------------------------------------------------
+
+function redisCreds() {
+  // Support both Upstash-native and Vercel-Marketplace (KV_*) variable names.
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL ?? "";
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN ?? "";
+  return url && token ? { url, token } : null;
+}
+
+const gr = globalThis as unknown as { __chupsRedis?: Redis | null };
+function redis(): Redis | null {
+  if (gr.__chupsRedis !== undefined) return gr.__chupsRedis;
+  const creds = redisCreds();
+  gr.__chupsRedis = creds ? new Redis(creds) : null;
+  return gr.__chupsRedis;
+}
+
+export function usingRedis(): boolean {
+  return redis() !== null;
+}
+
+/** Shared Redis client (or null in file mode) — reused by the recordings store. */
+export function redisClient(): Redis | null {
+  return redis();
+}
+
+// ---- in-memory mirror + file snapshot -------------------------------------
 
 type StoreState = {
   events: StoredEvent[];
+  loaded: boolean; // file backend: has the snapshot been read yet
   dirty: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const g = globalThis as unknown as { __chupsStore?: StoreState };
 
-function load(): StoredEvent[] {
+function state(): StoreState {
+  if (!g.__chupsStore) {
+    g.__chupsStore = { events: [], loaded: false, dirty: false, flushTimer: null };
+  }
+  return g.__chupsStore;
+}
+
+function loadFile(): StoredEvent[] {
   try {
     const raw = fs.readFileSync(DATA_FILE, "utf8");
     const parsed = JSON.parse(raw);
@@ -34,13 +77,6 @@ function load(): StoredEvent[] {
     /* first run — no file yet */
   }
   return [];
-}
-
-function state(): StoreState {
-  if (!g.__chupsStore) {
-    g.__chupsStore = { events: load(), dirty: false, flushTimer: null };
-  }
-  return g.__chupsStore;
 }
 
 function scheduleFlush() {
@@ -60,7 +96,29 @@ function scheduleFlush() {
   }, 2000);
 }
 
-export function ingest(batch: Batch): number {
+function coerce(x: unknown): StoredEvent {
+  // Upstash auto-deserializes JSON, but be defensive if a raw string comes back.
+  return typeof x === "string" ? (JSON.parse(x) as StoredEvent) : (x as StoredEvent);
+}
+
+// ---- public API -----------------------------------------------------------
+
+/** Populate the in-memory mirror from the active backend for this request. */
+export async function hydrateEvents(): Promise<void> {
+  const s = state();
+  const r = redis();
+  if (r) {
+    const raw = (await r.lrange(REDIS_KEY, 0, -1)) as unknown[];
+    s.events = raw.map(coerce);
+    return;
+  }
+  if (!s.loaded) {
+    s.events = loadFile();
+    s.loaded = true;
+  }
+}
+
+export async function ingest(batch: Batch): Promise<number> {
   const s = state();
   const recvTs = batch.events.reduce((max, e) => Math.max(max, e.ts), 0) || 0;
   const enriched: StoredEvent[] = batch.events.map((e) => ({
@@ -72,8 +130,23 @@ export function ingest(batch: Batch): number {
     device: batch.meta.device,
     browser: batch.meta.browser,
     os: batch.meta.os,
+    location: batch.meta.location || "—",
+    origin: batch.meta.origin || "",
     recvTs: recvTs || e.ts,
   }));
+  if (!enriched.length) return 0;
+
+  const r = redis();
+  if (r) {
+    await r.rpush(REDIS_KEY, ...enriched);
+    await r.ltrim(REDIS_KEY, -MAX_EVENTS, -1);
+    return enriched.length;
+  }
+
+  if (!s.loaded) {
+    s.events = loadFile();
+    s.loaded = true;
+  }
   s.events.push(...enriched);
   if (s.events.length > MAX_EVENTS) {
     s.events.splice(0, s.events.length - MAX_EVENTS);
@@ -94,8 +167,13 @@ export function hasLiveData(): boolean {
   return state().events.length > 0;
 }
 
-export function clearEvents() {
+export async function clearEvents(): Promise<void> {
   const s = state();
   s.events = [];
+  const r = redis();
+  if (r) {
+    await r.del(REDIS_KEY);
+    return;
+  }
   scheduleFlush();
 }

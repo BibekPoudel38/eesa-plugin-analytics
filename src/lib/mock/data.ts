@@ -159,6 +159,15 @@ export const devices = [
   { name: "Tablet", value: 6 },
 ];
 
+export const locations = [
+  { name: "Berlin, DE", value: 428, color: "var(--teal)" },
+  { name: "Austin, US", value: 361, color: "var(--ember)" },
+  { name: "London, UK", value: 298, color: "var(--amber)" },
+  { name: "Mumbai, IN", value: 214, color: "var(--pine)" },
+  { name: "Toronto, CA", value: 176, color: "var(--clay)" },
+  { name: "Sydney, AU", value: 132, color: "var(--teal)" },
+];
+
 // ---- live activity feed ---------------------------------------------------
 
 export type ActivityItem = {
@@ -270,6 +279,8 @@ export type SessionRow = {
   location: string;
   device: "Desktop" | "Mobile" | "Tablet";
   browser: string;
+  os?: string;
+  source?: string;
   durationSec: number;
   pages: number;
   events: number;
@@ -279,6 +290,9 @@ export type SessionRow = {
   path: string[]; // page journey
   replayId?: string; // full session id for the replay URL (live only)
   hasRecording?: boolean; // an rrweb replay is available
+  completed?: boolean; // reached an order/booking confirmation page
+  inCart?: boolean; // reached the cart
+  mealPass?: boolean; // reached the meal-pass page
 };
 
 export const sessions: SessionRow[] = [

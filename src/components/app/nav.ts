@@ -1,5 +1,6 @@
 import {
   LayoutGrid,
+  Users,
   Target,
   Clapperboard,
   Filter,
@@ -14,13 +15,16 @@ export type NavItem = {
   hint: string;
 };
 
+// Hrefs are under /app — the plugin's embedded UI mounts at that segment so the
+// public tracker/ingest/health/manifest/mcp routes can stay at the root.
 export const navItems: NavItem[] = [
-  { href: "/", label: "Overview", icon: LayoutGrid, hint: "Traffic & health at a glance" },
-  { href: "/heatmaps", label: "Heatmaps", icon: Target, hint: "Where clicks & attention pool" },
-  { href: "/sessions", label: "Sessions", icon: Clapperboard, hint: "Replay real visits" },
-  { href: "/funnels", label: "Funnels & events", icon: Filter, hint: "Conversion & event stream" },
+  { href: "/app", label: "Overview", icon: LayoutGrid, hint: "Traffic & health at a glance" },
+  { href: "/app/visitors", label: "Visitors", icon: Users, hint: "Everyone who's visited, with replays" },
+  { href: "/app/heatmaps", label: "Heatmaps", icon: Target, hint: "Where clicks & attention pool" },
+  { href: "/app/sessions", label: "Sessions", icon: Clapperboard, hint: "Replay real visits" },
+  { href: "/app/funnels", label: "Funnels & events", icon: Filter, hint: "Conversion & event stream" },
 ];
 
 export const setupItems: NavItem[] = [
-  { href: "/install", label: "Install", icon: Code2, hint: "Add tracking to your site" },
+  { href: "/app/install", label: "Install", icon: Code2, hint: "Add tracking to your site" },
 ];

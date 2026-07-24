@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Play, Pause, Film } from "lucide-react";
+import { Play, Pause, Film, Maximize2, Minimize2, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Meta = { device: string; page: string; firstTs: number; lastTs: number };
@@ -32,11 +32,16 @@ function fmt(ms: number) {
 }
 
 const SPEEDS = [1, 2, 4, 8];
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 3;
 
 export function ReplayPlayer({ id }: { id: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const replayerRef = useRef<any>(null);
   const rafRef = useRef<number>(0);
+  // zoom as a multiplier of the auto-fit scale (1 = fit-to-frame)
+  const zoomRef = useRef(1);
 
   const [status, setStatus] = useState<Status>("loading");
   const [playing, setPlaying] = useState(false);
@@ -45,19 +50,41 @@ export function ReplayPlayer({ id }: { id: string }) {
   const [speed, setSpeed] = useState(1);
   const [skip, setSkip] = useState(true);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pct, setPct] = useState(100); // displayed effective scale %
+  const [isFs, setIsFs] = useState(false);
 
-  const scaleStage = useCallback(() => {
+  const applyScale = useCallback(() => {
     const root = stageRef.current;
     if (!root) return;
     const wrapper = root.querySelector<HTMLElement>(".replayer-wrapper");
     if (!wrapper) return;
     const w = parseInt(wrapper.style.width) || 1024;
     const h = parseInt(wrapper.style.height) || 640;
-    const scale = Math.min(1.4, root.clientWidth / w);
-    wrapper.style.transform = `scale(${scale})`;
+    const cw = root.clientWidth;
+    const ch = root.clientHeight;
+    if (!cw || !ch) return;
+    // fit-to-contain, then apply the user's zoom multiplier
+    const fit = Math.min(cw / w, ch / h) || 1;
+    const scale = fit * zoomRef.current;
+    const tx = Math.max(0, (cw - w * scale) / 2);
+    const ty = Math.max(0, (ch - h * scale) / 2);
     wrapper.style.transformOrigin = "top left";
-    root.style.height = `${h * scale}px`;
+    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    // let the user pan when they've zoomed past the frame
+    root.style.overflow = w * scale > cw || h * scale > ch ? "auto" : "hidden";
+    setPct(Math.round(scale * 100));
   }, []);
+
+  const setZoomValue = useCallback(
+    (v: number) => {
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v));
+      zoomRef.current = next;
+      setZoom(next);
+      applyScale();
+    },
+    [applyScale],
+  );
 
   const tick = useCallback(() => {
     const r = replayerRef.current;
@@ -87,11 +114,13 @@ export function ReplayPlayer({ id }: { id: string }) {
         replayerRef.current = replayer;
         setTotal(replayer.getMetaData().totalTime);
         replayer.on("finish", () => setPlaying(false));
+        // the recorded page can change viewport mid-session — re-fit when it does
+        replayer.on("resize", () => applyScale());
 
         // give the iframe a beat to lay out, then scale + autoplay
         setTimeout(() => {
           if (cancelled) return;
-          scaleStage();
+          applyScale();
           setStatus("ready");
           replayer.play();
           setPlaying(true);
@@ -110,13 +139,41 @@ export function ReplayPlayer({ id }: { id: string }) {
         replayerRef.current?.destroy?.();
       } catch {}
     };
-  }, [id, scaleStage, tick]);
+  }, [id, applyScale, tick]);
 
+  // recompute on container resize (covers window resize + fullscreen relayout)
   useEffect(() => {
-    const onResize = () => scaleStage();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [scaleStage]);
+    const root = stageRef.current;
+    if (!root || typeof ResizeObserver === "undefined") {
+      const onResize = () => applyScale();
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
+    }
+    const ro = new ResizeObserver(() => applyScale());
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [applyScale]);
+
+  // track fullscreen state
+  useEffect(() => {
+    const onFs = () => {
+      setIsFs(document.fullscreenElement === containerRef.current);
+      requestAnimationFrame(() => applyScale());
+    };
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, [applyScale]);
+
+  const toggleFullscreen = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      /* fullscreen may be blocked; ignore */
+    }
+  };
 
   const togglePlay = () => {
     const r = replayerRef.current;
@@ -140,9 +197,7 @@ export function ReplayPlayer({ id }: { id: string }) {
 
   const changeSpeed = (s: number) => {
     setSpeed(s);
-    const r = replayerRef.current;
-    if (!r) return;
-    r.setConfig({ speed: s });
+    replayerRef.current?.setConfig({ speed: s });
   };
 
   const toggleSkip = () => {
@@ -152,10 +207,21 @@ export function ReplayPlayer({ id }: { id: string }) {
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
-      {/* stage */}
-      <div className="relative bg-[repeating-conic-gradient(var(--muted)_0deg_90deg,transparent_90deg_180deg)] [background-size:16px_16px]">
-        <div ref={stageRef} className="relative w-full overflow-hidden" style={{ minHeight: 320 }} />
+    <div
+      ref={containerRef}
+      className={cn(
+        "overflow-hidden rounded-xl border border-border bg-card",
+        isFs && "flex h-screen w-screen flex-col rounded-none border-0",
+      )}
+    >
+      {/* stage — fixed viewport-like frame; the recording is scaled to fit inside */}
+      <div
+        className={cn(
+          "relative overflow-hidden bg-[repeating-conic-gradient(var(--muted)_0deg_90deg,transparent_90deg_180deg)] [background-size:16px_16px]",
+          isFs ? "flex-1" : "h-[clamp(320px,58vh,560px)]",
+        )}
+      >
+        <div ref={stageRef} className="absolute inset-0 overflow-hidden" />
         {status !== "ready" && (
           <div className="absolute inset-0 grid place-items-center bg-card/80 text-center">
             {status === "loading" && (
@@ -183,7 +249,7 @@ export function ReplayPlayer({ id }: { id: string }) {
       </div>
 
       {/* controls */}
-      <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-4 py-3">
         <button
           onClick={togglePlay}
           disabled={status !== "ready"}
@@ -204,7 +270,7 @@ export function ReplayPlayer({ id }: { id: string }) {
           value={Math.min(cur, total)}
           onChange={(e) => seek(Number(e.target.value))}
           disabled={status !== "ready"}
-          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-[var(--ember)]"
+          className="h-1.5 min-w-[120px] flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-[var(--ember)]"
           style={{
             background: total
               ? `linear-gradient(to right, var(--ember) ${(Math.min(cur, total) / total) * 100}%, var(--muted) 0)`
@@ -245,8 +311,53 @@ export function ReplayPlayer({ id }: { id: string }) {
           skip idle
         </button>
 
-        {meta && (
-          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground lg:inline">
+        {/* zoom */}
+        <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-1.5 py-1">
+          <button
+            onClick={() => setZoomValue(zoom - 0.25)}
+            className="grid size-5 place-items-center rounded text-muted-foreground hover:text-foreground"
+            aria-label="Zoom out"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <input
+            type="range"
+            min={ZOOM_MIN}
+            max={ZOOM_MAX}
+            step={0.05}
+            value={zoom}
+            onChange={(e) => setZoomValue(Number(e.target.value))}
+            className="h-1 w-16 cursor-pointer appearance-none rounded-full bg-muted accent-[var(--ember)]"
+            aria-label="Zoom"
+          />
+          <button
+            onClick={() => setZoomValue(zoom + 0.25)}
+            className="grid size-5 place-items-center rounded text-muted-foreground hover:text-foreground"
+            aria-label="Zoom in"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          <button
+            onClick={() => setZoomValue(1)}
+            className="tabular ml-0.5 w-9 shrink-0 rounded px-1 py-0.5 text-center font-mono text-[0.68rem] text-muted-foreground hover:text-foreground"
+            title="Reset to fit"
+          >
+            {pct}%
+          </button>
+        </div>
+
+        {/* fullscreen */}
+        <button
+          onClick={toggleFullscreen}
+          className="grid size-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={isFs ? "Exit fullscreen" : "Fullscreen"}
+          title={isFs ? "Exit fullscreen" : "Fullscreen"}
+        >
+          {isFs ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+        </button>
+
+        {meta && !isFs && (
+          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground xl:inline">
             {meta.device} · {meta.page}
           </span>
         )}

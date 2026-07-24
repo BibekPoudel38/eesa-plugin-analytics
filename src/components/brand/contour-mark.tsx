@@ -50,7 +50,7 @@ export function Wordmark({ className }: { className?: string }) {
     <span className={cn("flex items-center gap-2", className)}>
       <ContourMark size={26} />
       <span className="font-display text-[1.15rem] font-bold tracking-tight text-foreground">
-        Chups
+        Chups <span className="font-semibold text-muted-foreground">Analytics</span>
       </span>
     </span>
   );

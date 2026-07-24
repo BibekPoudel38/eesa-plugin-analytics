@@ -1,0 +1,142 @@
+"use client";
+
+import { useState } from "react";
+import { Sparkles, RefreshCw, TriangleAlert, Lightbulb } from "lucide-react";
+import { Panel, PanelHead } from "@/components/app/panel";
+import { cn } from "@/lib/utils";
+import type { SessionAnalysis as Analysis } from "@/lib/analysis";
+
+const confTone: Record<Analysis["confidence"], string> = {
+  high: "bg-[var(--pine)]/12 text-[var(--pine)]",
+  medium: "bg-amber/15 text-amber",
+  low: "bg-muted text-muted-foreground",
+};
+
+type State = "idle" | "loading" | "done" | "error";
+
+export function SessionAnalysis({ id }: { id: string }) {
+  const [state, setState] = useState<State>("idle");
+  const [data, setData] = useState<Analysis | null>(null);
+
+  async function run() {
+    setState("loading");
+    try {
+      const res = await fetch(`/api/analyze/${id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("failed");
+      setData((await res.json()) as Analysis);
+      setState("done");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <Panel>
+      <PanelHead
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            <Sparkles className="size-4 text-ember" />
+            AI insight
+          </span>
+        }
+        sub="Why this visitor behaved the way they did"
+        right={
+          state === "done" ? (
+            <button
+              onClick={run}
+              className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:text-foreground"
+              title="Re-analyze"
+              aria-label="Re-analyze"
+            >
+              <RefreshCw className="size-3.5" />
+            </button>
+          ) : undefined
+        }
+      />
+      <div className="p-5">
+        {state === "idle" && (
+          <div className="space-y-3.5 text-center">
+            <p className="text-sm text-muted-foreground">
+              Let Chups AI read this session&apos;s journey and explain what
+              happened — and how to fix it.
+            </p>
+            <button
+              onClick={run}
+              className="inline-flex items-center gap-2 rounded-lg bg-ember px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-[var(--shadow-card)] transition-transform hover:scale-[1.02]"
+            >
+              <Sparkles className="size-4" />
+              Analyze session
+            </button>
+          </div>
+        )}
+
+        {state === "loading" && (
+          <div className="flex items-center gap-3 py-1 text-muted-foreground">
+            <Sparkles className="size-4 animate-pulse text-ember" />
+            <span className="text-sm">Reading the journey…</span>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="space-y-2 text-center">
+            <p className="text-sm text-destructive">
+              Couldn&apos;t analyze this session.
+            </p>
+            <button onClick={run} className="text-sm text-ember hover:underline">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {state === "done" && data && (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="font-display text-base font-bold tracking-tight text-foreground">
+                {data.headline}
+              </h4>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide",
+                  confTone[data.confidence],
+                )}
+              >
+                {data.confidence} confidence
+              </span>
+            </div>
+
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {data.summary}
+            </p>
+
+            <div>
+              <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                <TriangleAlert className="size-3.5 text-amber" />
+                Friction signals
+              </p>
+              <ul className="space-y-1.5">
+                {data.friction.map((f, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-foreground">
+                    <span className="mt-[0.45rem] size-1.5 shrink-0 rounded-full bg-amber" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-[var(--pine)]/25 bg-[var(--pine)]/10 p-3">
+              <p className="mb-1 flex items-center gap-1.5 font-mono text-[0.62rem] font-semibold uppercase tracking-wider text-[var(--pine)]">
+                <Lightbulb className="size-3.5" />
+                Recommendation
+              </p>
+              <p className="text-sm text-foreground">{data.recommendation}</p>
+            </div>
+
+            <p className="text-center text-[0.66rem] text-muted-foreground/70">
+              Generated by Chups AI
+            </p>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}

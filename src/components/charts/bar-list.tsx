@@ -25,16 +25,16 @@ export function BarList({
   return (
     <ul className={cn("flex flex-col gap-1.5", className)}>
       {items.map((item) => (
-        <li key={item.label} className="group relative">
+        <li key={item.label} className="group relative overflow-hidden rounded-lg">
           <div
-            className="absolute inset-y-0 left-0 rounded-md transition-[width] duration-500"
+            className="absolute inset-y-0 left-0 rounded-lg transition-[width,opacity] duration-500 group-hover:opacity-100"
             style={{
               width: `${(item.value / max) * 100}%`,
               background: item.color ?? "var(--ember-soft)",
               opacity: item.color ? 0.16 : 1,
             }}
           />
-          <div className="relative flex items-center justify-between px-2.5 py-1.5">
+          <div className="relative flex items-center justify-between px-2.5 py-1.5 transition-colors group-hover:bg-foreground/[0.02]">
             <span className="flex items-center gap-2 truncate text-sm text-foreground">
               {item.color && (
                 <span

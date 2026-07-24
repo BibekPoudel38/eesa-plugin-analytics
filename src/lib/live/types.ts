@@ -43,6 +43,10 @@ export type Meta = {
   os: string;
   viewportW: number;
   viewportH: number;
+  /** "City, CC" — enriched server-side from request geo headers (never from the browser). */
+  location?: string;
+  /** Origin of the tracked site, read server-side from the collect request's Origin/Referer. */
+  origin?: string;
 };
 
 /** What the browser POSTs to /api/collect. */
@@ -60,6 +64,10 @@ export type StoredEvent = RawEvent & {
   device: Meta["device"];
   browser: string;
   os: string;
+  /** "City, CC" — geo-enriched at ingest; "—" when unknown */
+  location: string;
+  /** tracked-site origin (e.g. https://chups-mom2mom-v2.vercel.app); "" when unknown */
+  origin: string;
   /** server receive time (authoritative for ordering) */
   recvTs: number;
 };

@@ -21,6 +21,7 @@ export function Donut({
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
+  const gap = slices.length > 1 ? 3 : 0; // px gap between segments
   let offset = 0;
 
   return (
@@ -36,7 +37,7 @@ export function Donut({
         />
         {slices.map((s) => {
           const frac = s.value / total;
-          const dash = frac * c;
+          const dash = Math.max(frac * c - gap, 0.5);
           const seg = (
             <circle
               key={s.name}
@@ -48,10 +49,10 @@ export function Donut({
               strokeWidth={thickness}
               strokeDasharray={`${dash} ${c - dash}`}
               strokeDashoffset={-offset}
-              strokeLinecap="butt"
+              strokeLinecap="round"
             />
           );
-          offset += dash;
+          offset += frac * c;
           return seg;
         })}
       </svg>

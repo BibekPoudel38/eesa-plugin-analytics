@@ -78,7 +78,10 @@ type SessionAgg = {
   visitorId: string;
   device: StoredEvent["device"];
   browser: string;
+  os: string;
   referrer: string;
+  source: string;
+  location: string;
   firstTs: number;
   lastTs: number;
   pageviews: StoredEvent[];
@@ -101,7 +104,10 @@ function sessionize(events: StoredEvent[]): SessionAgg[] {
       visitorId: evts[0].visitorId,
       device: evts[0].device,
       browser: evts[0].browser,
+      os: evts[0].os,
       referrer: evts[0].referrer,
+      source: classifySource(evts[0].referrer),
+      location: evts.find((e) => e.location && e.location !== "—")?.location ?? "—",
       firstTs: evts[0].ts,
       lastTs: evts[evts.length - 1].ts,
       pageviews,
@@ -116,8 +122,8 @@ function sessionize(events: StoredEvent[]): SessionAgg[] {
 
 // ---- KPIs -----------------------------------------------------------------
 
-export function liveKpis(now = Date.now()): Kpi[] {
-  const events = allEvents();
+export function liveKpis(now = Date.now(), evs?: StoredEvent[]): Kpi[] {
+  const events = evs ?? allEvents();
   const span = timeSpan(events);
   const sessions = sessionize(events);
   const spanSpark = (f: (e: StoredEvent) => boolean) =>
@@ -193,9 +199,9 @@ export function liveKpis(now = Date.now()): Kpi[] {
 
 // ---- trend ----------------------------------------------------------------
 
-export function liveTrend() {
-  const events = allEvents();
-  const span = timeSpan(events);
+export function liveTrend(evs?: StoredEvent[], spanArg?: [number, number]) {
+  const events = evs ?? allEvents();
+  const span = spanArg ?? timeSpan(events);
   const pv = events.filter((e) => e.type === "pageview");
   const buckets = 24;
   const sessions = new Array(buckets).fill(0);
@@ -237,8 +243,8 @@ const sourceColor: Record<string, string> = {
   Internal: "var(--muted-foreground)",
 };
 
-export function liveSources() {
-  const sessions = sessionize(allEvents());
+export function liveSources(evs?: StoredEvent[]) {
+  const sessions = sessionize(evs ?? allEvents());
   const counts = new Map<string, number>();
   for (const s of sessions) {
     const src = classifySource(s.referrer);
@@ -251,8 +257,8 @@ export function liveSources() {
 
 // ---- top pages ------------------------------------------------------------
 
-export function liveTopPages(): PageRow[] {
-  const events = allEvents();
+export function liveTopPages(evs?: StoredEvent[]): PageRow[] {
+  const events = evs ?? allEvents();
   const sessions = sessionize(events);
   const byPath = groupBy(
     events.filter((e) => e.type === "pageview"),
@@ -288,8 +294,8 @@ export function liveTopPages(): PageRow[] {
 
 // ---- devices --------------------------------------------------------------
 
-export function liveDevices() {
-  const sessions = sessionize(allEvents());
+export function liveDevices(evs?: StoredEvent[]) {
+  const sessions = sessionize(evs ?? allEvents());
   const counts = { Desktop: 0, Mobile: 0, Tablet: 0 };
   for (const s of sessions) counts[s.device]++;
   const total = sessions.length || 1;
@@ -299,14 +305,41 @@ export function liveDevices() {
   }));
 }
 
+// ---- locations ------------------------------------------------------------
+
+const locationPalette = [
+  "var(--teal)",
+  "var(--ember)",
+  "var(--amber)",
+  "var(--pine)",
+  "var(--clay)",
+];
+
+export function liveLocations(evs?: StoredEvent[]) {
+  const sessions = sessionize(evs ?? allEvents());
+  const counts = new Map<string, number>();
+  for (const s of sessions) {
+    const loc = s.location && s.location !== "—" ? s.location : "Unknown";
+    counts.set(loc, (counts.get(loc) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: locationPalette[i % locationPalette.length],
+    }));
+}
+
 // ---- live activity --------------------------------------------------------
 
 function shortId(id: string) {
   return "user_" + id.slice(-4);
 }
 
-export function liveActivity(now = Date.now()): ActivityItem[] {
-  const events = allEvents();
+export function liveActivity(now = Date.now(), evs?: StoredEvent[]): ActivityItem[] {
+  const events = evs ?? allEvents();
   const recent = [...events].sort((a, b) => b.ts - a.ts).slice(0, 12);
   return recent.map((e, i) => {
     const kind =
@@ -349,8 +382,8 @@ export function liveActivity(now = Date.now()): ActivityItem[] {
 const GRID_X = 16;
 const GRID_Y = 10;
 
-export function liveHeatPages(): HeatPage[] {
-  const events = allEvents();
+export function liveHeatPages(evs?: StoredEvent[]): HeatPage[] {
+  const events = evs ?? allEvents();
   const sessions = sessionize(events);
   const clickTypes = new Set(["click", "rageclick"]);
   const byPath = groupBy(
@@ -442,7 +475,12 @@ export function liveHeatPages(): HeatPage[] {
 
 function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
   const durationSec = Math.round((s.lastTs - s.firstTs) / 1000);
-  const outcome: SessionRow["outcome"] = s.converted
+  // commerce funnel signals, read from the pages the visitor reached
+  const inPath = (needle: string) => s.paths.some((p) => p.includes(needle));
+  const completed = inPath("confirmation.html"); // covers confirmation + event-confirmation
+  const inCart = inPath("cart.html");
+  const mealPass = inPath("meal-pass.html");
+  const outcome: SessionRow["outcome"] = completed
     ? "Converted"
     : s.pageviews.length <= 1 && durationSec < 15
       ? "Bounced"
@@ -451,9 +489,11 @@ function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
     id: "s_" + s.id.slice(-5),
     user: shortId(s.visitorId),
     anon: true,
-    location: "—",
+    location: s.location,
     device: s.device,
     browser: s.browser,
+    os: s.os,
+    source: s.source,
     durationSec,
     pages: s.paths.length,
     events: s.events.length,
@@ -463,18 +503,25 @@ function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
     path: s.paths.slice(0, 6),
     replayId: s.id,
     hasRecording: recs.has(s.id),
+    completed,
+    inCart,
+    mealPass,
   };
 }
 
-export function liveSessions(now = Date.now()): SessionRow[] {
+export function liveSessions(now = Date.now(), evs?: StoredEvent[]): SessionRow[] {
   const recs = recordingIds();
-  return sessionize(allEvents())
+  return sessionize(evs ?? allEvents())
     .slice(0, 24)
     .map((s) => toRow(s, recs, now));
 }
 
-export function liveSessionDetail(id: string, now = Date.now()): SessionRow | null {
-  const s = sessionize(allEvents()).find((x) => x.id === id);
+export function liveSessionDetail(
+  id: string,
+  now = Date.now(),
+  evs?: StoredEvent[],
+): SessionRow | null {
+  const s = sessionize(evs ?? allEvents()).find((x) => x.id === id);
   return s ? toRow(s, recordingIds(), now) : null;
 }
 
@@ -489,8 +536,8 @@ const typeLabel: Record<string, string> = {
   session_end: "session_end",
 };
 
-export function liveEvents(): EventRow[] {
-  const events = allEvents();
+export function liveEvents(evs?: StoredEvent[]): EventRow[] {
+  const events = evs ?? allEvents();
   const span = timeSpan(events);
   const named = (e: StoredEvent) =>
     e.type === "custom" ? e.name ?? "custom" : typeLabel[e.type] ?? e.type;
