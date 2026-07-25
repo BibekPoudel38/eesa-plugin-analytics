@@ -22,6 +22,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 # Coolify/pipeline inject PORT; Next standalone honours it.
 ENV PORT=8080
+# CRITICAL: Next.js standalone binds to `process.env.HOSTNAME || '0.0.0.0'`, but
+# Docker auto-sets HOSTNAME to the container ID — so without this the server
+# binds to the container-ID hostname instead of all interfaces, and Coolify's
+# proxy can't reach it (permanent 502 on every path). Force 0.0.0.0.
+ENV HOSTNAME=0.0.0.0
 EXPOSE 8080
 
 # Standalone output = server + only the deps it actually needs.
