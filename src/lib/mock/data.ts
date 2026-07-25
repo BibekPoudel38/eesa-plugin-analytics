@@ -1,5 +1,5 @@
 /**
- * Mock analytics data for the Chups demo workspace.
+ * Mock analytics data for the Eesa demo workspace.
  *
  * The tracked product is "Sprout" — a small indie habit-tracking app. Numbers
  * are sized for an early-stage startup (~1.3k monthly users). Everything is
@@ -290,9 +290,8 @@ export type SessionRow = {
   path: string[]; // page journey
   replayId?: string; // full session id for the replay URL (live only)
   hasRecording?: boolean; // an rrweb replay is available
-  completed?: boolean; // reached an order/booking confirmation page
-  inCart?: boolean; // reached the cart
-  mealPass?: boolean; // reached the meal-pass page
+  completed?: boolean; // reached a confirmation / thank-you / success page
+  inCart?: boolean; // reached a cart / checkout page
 };
 
 export const sessions: SessionRow[] = [

@@ -1,10 +1,10 @@
--- Chups Analytics plugin — Postgres/TimescaleDB schema.
+-- Eesa Analytics plugin — Postgres/TimescaleDB schema.
 --
 -- Tenant isolation is app-level, exactly like eesa-plugin-documents: every row
 -- carries tenant_id (the Eesa tenant id from the verified JWT `tenantId` claim,
 -- NEVER a client input). Every query is scoped by it.
 --
--- Two planes write here (see CHUPS_ANALYTICS_PLUGIN_DESIGN.md §2):
+-- Two planes write here (see EESA_ANALYTICS_PLUGIN_DESIGN.md §2):
 --   • Authed dashboard/agent — tenant_id from the Eesa JWT.
 --   • Public ingest — tenant_id + site_id resolved from a site's tracking_key,
 --     which was itself minted in the authed plane and is bound to a tenant.
@@ -25,7 +25,7 @@ create table if not exists sites (
     tenant_id       text not null,
     name            text not null default '',
     domain          text not null default '',        -- display/canonical host
-    tracking_key    text not null unique,            -- public write key (e.g. chps_live_…)
+    tracking_key    text not null unique,            -- public write key (e.g. eak_live_…)
     allowed_origins text[] not null default '{}',     -- ingest Origin allowlist; empty = any (dev)
     record_replay   boolean not null default false,   -- rrweb off by default (privacy)
     mask_inputs     boolean not null default true,    -- when replay on, force maskAllInputs

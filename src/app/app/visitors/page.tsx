@@ -14,9 +14,8 @@ export const dynamic = "force-dynamic";
 
 const filters = [
   { key: "all", label: "All" },
-  { key: "completed", label: "Completed orders" },
-  { key: "cart", label: "In cart" },
-  { key: "mealpass", label: "Meal Pass" },
+  { key: "completed", label: "Converted" },
+  { key: "cart", label: "Reached checkout" },
 ] as const;
 
 type FilterKey = (typeof filters)[number]["key"];
@@ -24,7 +23,6 @@ type FilterKey = (typeof filters)[number]["key"];
 function matches(v: Visitor, key: FilterKey) {
   if (key === "completed") return v.completed;
   if (key === "cart") return v.inCart;
-  if (key === "mealpass") return v.mealPass;
   return true;
 }
 
@@ -80,17 +78,12 @@ function VisitorRow({ v }: { v: Visitor }) {
               )}
               {v.completed && (
                 <span className="rounded-full bg-[var(--pine)]/12 px-1.5 py-0.5 text-[0.6rem] font-medium text-[var(--pine)]">
-                  Completed
+                  Converted
                 </span>
               )}
               {!v.completed && v.inCart && (
                 <span className="rounded-full bg-teal/12 px-1.5 py-0.5 text-[0.6rem] font-medium text-teal">
-                  In cart
-                </span>
-              )}
-              {v.mealPass && (
-                <span className="rounded-full bg-ember/12 px-1.5 py-0.5 text-[0.6rem] font-medium text-ember">
-                  Meal Pass
+                  Checkout
                 </span>
               )}
             </div>
@@ -196,7 +189,6 @@ export default async function VisitorsPage({
 
   const completed = visitors.filter((v) => v.completed).length;
   const inCart = visitors.filter((v) => v.inCart).length;
-  const mealPass = visitors.filter((v) => v.mealPass).length;
 
   const activeLabel = filters.find((f) => f.key === active)?.label ?? "All";
 
@@ -210,11 +202,10 @@ export default async function VisitorsPage({
       />
 
       <Panel>
-        <div className="grid grid-cols-2 divide-x divide-y divide-border/70 sm:grid-cols-4 sm:divide-y-0">
+        <div className="grid grid-cols-3 divide-x divide-y divide-border/70 sm:divide-y-0">
           <Stat label="Visitors" value={String(visitors.length)} />
-          <Stat label="Completed orders" value={String(completed)} />
-          <Stat label="In cart" value={String(inCart)} />
-          <Stat label="Meal Pass" value={String(mealPass)} />
+          <Stat label="Converted" value={String(completed)} />
+          <Stat label="Reached checkout" value={String(inCart)} />
         </div>
       </Panel>
 

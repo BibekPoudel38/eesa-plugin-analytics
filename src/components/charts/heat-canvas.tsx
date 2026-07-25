@@ -5,7 +5,7 @@ const VB_W = 100;
 const VB_H = 63;
 
 /**
- * The Chups heat overlay. Each hotspot is a radial "attention contour" whose
+ * The Eesa heat overlay. Each hotspot is a radial "attention contour" whose
  * radius tracks its click weight; a soft blur melts overlaps together so pools
  * of attention read as terrain. Cold → hot follows the brand heat scale.
  */

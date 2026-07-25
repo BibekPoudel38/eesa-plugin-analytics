@@ -1,4 +1,4 @@
-import { CircleCheckBig, ShoppingCart, Ticket } from "lucide-react";
+import { CircleCheckBig, ShoppingCart } from "lucide-react";
 import { PageHeader, DeltaPill } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { KebabButton } from "@/components/app/segmented";
@@ -38,10 +38,9 @@ export default async function OverviewPage({
     await getOverview(scope.tenantId, site.id, range);
   const status = await getLiveStatus(scope.tenantId, site.id);
   const { visitors } = await getVisitorsData(scope.tenantId, site.id, range);
-  const commerce = {
+  const conversions = {
     completed: visitors.filter((v) => v.completed).length,
     inCart: visitors.filter((v) => v.inCart).length,
-    mealPass: visitors.filter((v) => v.mealPass).length,
   };
   const totalSource = sources.reduce((s, x) => s + x.value, 0);
   const sessionsKpi = kpis.find((k) => k.key === "sessions");
@@ -72,31 +71,23 @@ export default async function OverviewPage({
         ))}
       </div>
 
-      {/* commerce funnel — clickable through to the matching visitors */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* conversion signals — clickable through to the matching visitors */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <MetricTile
-          label="Completed orders"
-          value={commerce.completed}
-          sub="Reached order / booking confirmation"
+          label="Conversions"
+          value={conversions.completed}
+          sub="Reached a confirmation / thank-you page"
           href="/app/visitors?f=completed"
           icon={CircleCheckBig}
           color="var(--pine)"
         />
         <MetricTile
-          label="In cart"
-          value={commerce.inCart}
-          sub="Visitors who reached the cart"
+          label="Reached checkout"
+          value={conversions.inCart}
+          sub="Visitors who reached a cart / checkout page"
           href="/app/visitors?f=cart"
           icon={ShoppingCart}
           color="var(--teal)"
-        />
-        <MetricTile
-          label="Meal Pass"
-          value={commerce.mealPass}
-          sub="Engaged the meal-pass page"
-          href="/app/visitors?f=mealpass"
-          icon={Ticket}
-          color="var(--ember)"
         />
       </div>
 

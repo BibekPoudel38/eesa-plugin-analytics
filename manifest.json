@@ -1,12 +1,12 @@
 {
   "manifestVersion": "1.0",
   "slug": "analytics",
-  "name": "Chups Analytics",
+  "name": "Eesa Analytics",
   "version": "0.1.0",
   "description": "Product analytics, heatmaps, and session replay for your sites. Paste one snippet per site and see where attention pools and where users fall off — right inside Eesa.",
   "icon": "https://cdn.eesa.ai/icons/analytics.png",
   "hostedBy": "self",
-  "developer": { "name": "Chups", "email": "team@eesa.ai" },
+  "developer": { "name": "Eesa", "email": "team@eesa.ai" },
   "auth": { "verify": "eesa-jwks", "gatewayOnly": true },
   "scopes": ["analytics:read", "analytics:write", "analytics:admin"],
   "surfaces": {

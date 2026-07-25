@@ -231,7 +231,6 @@ function classifySource(referrer: string): string {
   if (/google\.|bing\.|duckduckgo\.|yahoo\./.test(host)) return "Organic search";
   if (/facebook\.|instagram\.|t\.co|twitter\.|x\.com|linkedin\.|reddit\.|tiktok\./.test(host))
     return "Social";
-  if (host.includes("vercel.app") || host.includes("mom2mom")) return "Internal";
   return "Referral";
 }
 
@@ -475,11 +474,13 @@ export function liveHeatPages(evs?: StoredEvent[]): HeatPage[] {
 
 function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
   const durationSec = Math.round((s.lastTs - s.firstTs) / 1000);
-  // commerce funnel signals, read from the pages the visitor reached
-  const inPath = (needle: string) => s.paths.some((p) => p.includes(needle));
-  const completed = inPath("confirmation.html"); // covers confirmation + event-confirmation
-  const inCart = inPath("cart.html");
-  const mealPass = inPath("meal-pass.html");
+  // Generic conversion signals, inferred from the pages the visitor reached.
+  // Heuristics over common path patterns so they work for any kind of site;
+  // per-site custom funnels (the `funnels` table) refine these later.
+  const inAny = (needles: string[]) =>
+    s.paths.some((p) => { const lp = p.toLowerCase(); return needles.some((n) => lp.includes(n)); });
+  const completed = inAny(["confirmation", "thank", "success", "order-complete", "complete", "receipt"]);
+  const inCart = inAny(["cart", "checkout", "basket"]);
   const outcome: SessionRow["outcome"] = completed
     ? "Converted"
     : s.pageviews.length <= 1 && durationSec < 15
@@ -505,7 +506,6 @@ function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
     hasRecording: recs.has(s.id),
     completed,
     inCart,
-    mealPass,
   };
 }
 

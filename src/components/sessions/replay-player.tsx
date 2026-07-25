@@ -234,7 +234,7 @@ export function ReplayPlayer({ id }: { id: string }) {
               <div className="max-w-sm space-y-1 px-6">
                 <p className="font-medium text-foreground">No recording for this session</p>
                 <p className="text-sm text-muted-foreground">
-                  Replays are captured live by chups.js. Demo sessions and very
+                  Replays are captured live by eesa-analytics.js. Demo sessions and very
                   short visits don&apos;t have one.
                 </p>
               </div>

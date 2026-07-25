@@ -20,7 +20,7 @@ import type { Batch, StoredEvent } from "./types";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DATA_FILE = path.join(DATA_DIR, "events.json");
 const MAX_EVENTS = 50_000; // ring-buffer cap so the demo can't grow unbounded
-const REDIS_KEY = "chups:events";
+const REDIS_KEY = "eesa:events";
 
 // ---- backend selection ----------------------------------------------------
 
@@ -33,12 +33,12 @@ function redisCreds() {
   return url && token ? { url, token } : null;
 }
 
-const gr = globalThis as unknown as { __chupsRedis?: Redis | null };
+const gr = globalThis as unknown as { __eesaRedis?: Redis | null };
 function redis(): Redis | null {
-  if (gr.__chupsRedis !== undefined) return gr.__chupsRedis;
+  if (gr.__eesaRedis !== undefined) return gr.__eesaRedis;
   const creds = redisCreds();
-  gr.__chupsRedis = creds ? new Redis(creds) : null;
-  return gr.__chupsRedis;
+  gr.__eesaRedis = creds ? new Redis(creds) : null;
+  return gr.__eesaRedis;
 }
 
 export function usingRedis(): boolean {
@@ -59,13 +59,13 @@ type StoreState = {
   flushTimer: ReturnType<typeof setTimeout> | null;
 };
 
-const g = globalThis as unknown as { __chupsStore?: StoreState };
+const g = globalThis as unknown as { __eesaStore?: StoreState };
 
 function state(): StoreState {
-  if (!g.__chupsStore) {
-    g.__chupsStore = { events: [], loaded: false, dirty: false, flushTimer: null };
+  if (!g.__eesaStore) {
+    g.__eesaStore = { events: [], loaded: false, dirty: false, flushTimer: null };
   }
-  return g.__chupsStore;
+  return g.__eesaStore;
 }
 
 function loadFile(): StoredEvent[] {

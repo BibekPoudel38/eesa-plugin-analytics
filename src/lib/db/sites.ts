@@ -59,7 +59,7 @@ function mapSite(r: SiteRow): Site {
 
 /** Public write key that goes in the snippet's `data-site`. Unguessable. */
 export function generateTrackingKey(): string {
-  return "chps_live_" + randomBytes(18).toString("base64url");
+  return "eak_live_" + randomBytes(18).toString("base64url");
 }
 
 const COLS =
@@ -189,7 +189,7 @@ export interface ResolvedSite {
 export async function resolveTrackingKey(
   trackingKey: string,
 ): Promise<ResolvedSite | null> {
-  if (!trackingKey || !trackingKey.startsWith("chps_")) return null;
+  if (!trackingKey || !trackingKey.startsWith("eak_")) return null;
   const rows = await query<{
     tenant_id: string;
     id: string;

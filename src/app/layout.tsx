@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chups Analytics — see where attention pools",
+  title: "Eesa Analytics — see where attention pools",
   description:
     "Product analytics, heatmaps, and session replay for indie makers. Map where users go, and where they fall off.",
 };

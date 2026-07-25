@@ -1,4 +1,4 @@
-/** Shared event contract between chups.js (browser) and the ingest API. */
+/** Shared event contract between eesa-analytics.js (browser) and the ingest API. */
 
 export type EventType =
   | "pageview"
@@ -66,7 +66,7 @@ export type StoredEvent = RawEvent & {
   os: string;
   /** "City, CC" — geo-enriched at ingest; "—" when unknown */
   location: string;
-  /** tracked-site origin (e.g. https://chups-mom2mom-v2.vercel.app); "" when unknown */
+  /** tracked-site origin (e.g. https://www.example.com); "" when unknown */
   origin: string;
   /** server receive time (authoritative for ordering) */
   recvTs: number;

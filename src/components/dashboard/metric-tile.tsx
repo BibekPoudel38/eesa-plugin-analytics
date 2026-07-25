@@ -3,7 +3,7 @@ import { ArrowUpRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Compact clickable stat tile for count-style metrics (orders, cart, meal pass).
+ * Compact clickable stat tile for count-style metrics (conversions, checkout, etc.).
  * Links through to a filtered visitors view so the number is explorable.
  */
 export function MetricTile({

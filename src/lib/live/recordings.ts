@@ -5,9 +5,9 @@ import { redisClient } from "./store";
  * Store for rrweb session recordings, with two backends (chosen at runtime):
  *
  *  • Redis (Upstash) — production. Each session's rrweb events live in a LIST
- *    (`chups:rec:<sid>`), metadata in a HASH (`chups:recmeta:<sid>`), a SET of
- *    sessions that have a playable recording (`chups:rec:ids`), and a ZSET keyed
- *    by recency (`chups:rec:recency`) for capacity eviction.
+ *    (`eesa:rec:<sid>`), metadata in a HASH (`eesa:recmeta:<sid>`), a SET of
+ *    sessions that have a playable recording (`eesa:rec:ids`), and a ZSET keyed
+ *    by recency (`eesa:rec:recency`) for capacity eviction.
  *  • In-memory Map — local dev.
  *
  * Replay payloads are large, so we cap events-per-session and total sessions.
@@ -31,18 +31,18 @@ export type Recording = {
 const MAX_RECORDINGS = 60;
 const MAX_EVENTS_PER = 8000;
 
-const RKEY = (sid: string) => `chups:rec:${sid}`;
-const MKEY = (sid: string) => `chups:recmeta:${sid}`;
-const IDS = "chups:rec:ids"; // sessions with a playable recording (>1 event)
-const RECENCY = "chups:rec:recency"; // sid -> lastTs, for capacity eviction
+const RKEY = (sid: string) => `eesa:rec:${sid}`;
+const MKEY = (sid: string) => `eesa:recmeta:${sid}`;
+const IDS = "eesa:rec:ids"; // sessions with a playable recording (>1 event)
+const RECENCY = "eesa:rec:recency"; // sid -> lastTs, for capacity eviction
 
 // ---- in-memory mirror -----------------------------------------------------
 
 type RecState = { map: Map<string, Recording>; ids: Set<string> };
-const g = globalThis as unknown as { __chupsRec?: RecState };
+const g = globalThis as unknown as { __eesaRec?: RecState };
 function state(): RecState {
-  if (!g.__chupsRec) g.__chupsRec = { map: new Map(), ids: new Set() };
-  return g.__chupsRec;
+  if (!g.__eesaRec) g.__eesaRec = { map: new Map(), ids: new Set() };
+  return g.__eesaRec;
 }
 
 function coerce(x: unknown): RRWebEvent {

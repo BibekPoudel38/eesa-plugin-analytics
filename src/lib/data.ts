@@ -118,7 +118,6 @@ export type Visitor = {
   converted: boolean;
   completed: boolean;
   inCart: boolean;
-  mealPass: boolean;
   hasRecording: boolean;
   sessionId: string;
 };
@@ -166,7 +165,6 @@ export async function getVisitorsData(
       converted: rows.some((r) => r.outcome === "Converted"),
       completed: rows.some((r) => r.completed),
       inCart: rows.some((r) => r.inCart),
-      mealPass: rows.some((r) => r.mealPass),
       hasRecording: rows.some((r) => r.hasRecording),
       sessionId: latest.replayId ?? latest.id,
     };

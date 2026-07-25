@@ -1,17 +1,17 @@
 /*!
- * chups.js — lightweight product-analytics tracker for Chups Analytics.
+ * eesa-analytics.js — lightweight product-analytics tracker for Eesa Analytics.
  * Captures page views, clicks (with position), rage/dead clicks, scroll depth,
- * sessions and custom events, then batches them to the Chups ingest endpoint.
+ * sessions and custom events, then batches them to the Eesa ingest endpoint.
  *
  * Install:
- *   <script src="https://YOUR-CHUPS-HOST/chups.js" data-site="mom2mom" defer></script>
+ *   <script src="https://YOUR-EESA-HOST/eesa-analytics.js" data-site="YOUR_SITE_KEY" defer></script>
  * Custom events:
- *   chups('add_to_cart', { meal: 'Biryani', price: 12 })
+ *   eesa('add_to_cart', { item: 'Blue T-Shirt', price: 29 })
  */
 (function () {
   "use strict";
-  if (window.__chupsLoaded) return;
-  window.__chupsLoaded = true;
+  if (window.__eesaLoaded) return;
+  window.__eesaLoaded = true;
 
   // ---- resolve config from our own <script> tag --------------------------
   var me =
@@ -19,11 +19,11 @@
     (function () {
       var s = document.getElementsByTagName("script");
       for (var i = s.length - 1; i >= 0; i--) {
-        if (s[i].src && s[i].src.indexOf("chups.js") > -1) return s[i];
+        if (s[i].src && s[i].src.indexOf("eesa-analytics.js") > -1) return s[i];
       }
       return null;
     })();
-  var cfg = window.ChupsConfig || {};
+  var cfg = window.EesaConfig || {};
   var siteId = (me && me.getAttribute("data-site")) || cfg.site || "default";
   var origin = me ? new URL(me.src).origin : "";
   var endpoint =
@@ -49,16 +49,16 @@
     } catch (e) {}
     return null;
   }
-  var visitorId = ls("chups_vid") || (function () { var v = uid(); ls("chups_vid", v); return v; })();
+  var visitorId = ls("eesa_vid") || (function () { var v = uid(); ls("eesa_vid", v); return v; })();
   function sessionId() {
     var now = Date.now();
-    var id = ls("chups_sid");
-    var exp = parseInt(ls("chups_sid_exp") || "0", 10);
+    var id = ls("eesa_sid");
+    var exp = parseInt(ls("eesa_sid_exp") || "0", 10);
     if (!id || now > exp) {
       id = uid();
-      ls("chups_sid", id);
+      ls("eesa_sid", id);
     }
-    ls("chups_sid_exp", String(now + SESSION_MS));
+    ls("eesa_sid_exp", String(now + SESSION_MS));
     return id;
   }
 
@@ -317,14 +317,14 @@
   });
   window.addEventListener("pagehide", function () { endpage(true); });
 
-  // ---- public API: chups('event_name', { props }) -----------------------
-  var prevApi = window.chups;
-  window.chups = function (name, props) {
+  // ---- public API: eesa('event_name', { props }) -----------------------
+  var prevApi = window.eesa;
+  window.eesa = function (name, props) {
     push({ type: "custom", name: String(name), props: props || {} });
   };
-  // replay any calls queued before load: window.chups = window.chups || function(){(chups.q=chups.q||[]).push(arguments)}
+  // replay any calls queued before load: window.eesa = window.eesa || function(){(eesa.q=eesa.q||[]).push(arguments)}
   if (prevApi && prevApi.q && prevApi.q.length) {
-    prevApi.q.forEach(function (args) { window.chups.apply(null, args); });
+    prevApi.q.forEach(function (args) { window.eesa.apply(null, args); });
   }
 
   // fire the first page view

@@ -1,4 +1,4 @@
-# Chups Analytics plugin — multi-stage Next.js 16 (standalone) image for Coolify.
+# Eesa Analytics plugin — multi-stage Next.js 16 (standalone) image for Coolify.
 # The publishing pipeline builds this with buildpack "dockerfile".
 
 # ---- deps: install with a clean, reproducible lockfile --------------------

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Chups signature — concentric "attention contours" rising to a hotspot core.
+ * Eesa signature — concentric "attention contours" rising to a hotspot core.
  * The whole product's visual metaphor (cartography of attention) in one mark.
  */
 export function ContourMark({
@@ -50,7 +50,7 @@ export function Wordmark({ className }: { className?: string }) {
     <span className={cn("flex items-center gap-2", className)}>
       <ContourMark size={26} />
       <span className="font-display text-[1.15rem] font-bold tracking-tight text-foreground">
-        Chups <span className="font-semibold text-muted-foreground">Analytics</span>
+        Eesa <span className="font-semibold text-muted-foreground">Analytics</span>
       </span>
     </span>
   );

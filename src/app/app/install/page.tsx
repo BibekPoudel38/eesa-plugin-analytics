@@ -39,8 +39,8 @@ export default async function InstallPage() {
 
   // The snippet is unique per site — its data-site is the site's public
   // tracking key, which maps ingest back to this tenant + site.
-  const snippet = `<script src="${origin}/chups.js" data-site="${site.trackingKey}" defer></script>`;
-  const customExample = `// fire a custom event whenever something important happens\nchups('signup', { plan: 'pro' });`;
+  const snippet = `<script src="${origin}/eesa-analytics.js" data-site="${site.trackingKey}" defer></script>`;
+  const customExample = `// fire a custom event whenever something important happens\neesa('signup', { plan: 'pro' });`;
 
   return (
     <div className="space-y-6">
@@ -85,7 +85,7 @@ export default async function InstallPage() {
       {onLocalhost && (
         <div className="rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-foreground shadow-[var(--shadow-card)]">
           <span className="font-medium">Heads up —</span> you&apos;re viewing
-          Chups on <span className="font-mono text-xs">localhost</span>. A
+          Eesa Analytics on <span className="font-mono text-xs">localhost</span>. A
           deployed site can&apos;t reach that. Start a tunnel (e.g.{" "}
           <span className="font-mono text-xs">
             cloudflared tunnel --url http://localhost:3111
@@ -122,8 +122,8 @@ export default async function InstallPage() {
               <p className="text-sm text-muted-foreground">
                 Page views, clicks, scroll depth, rage &amp; dead clicks and
                 sessions are captured automatically. Call{" "}
-                <span className="font-mono text-xs">chups(name, props)</span> for
-                product events like checkout or reservations — they show up in
+                <span className="font-mono text-xs">eesa(name, props)</span> for
+                product events like signups or checkout — they show up in
                 Funnels &amp; events.
               </p>
             </div>

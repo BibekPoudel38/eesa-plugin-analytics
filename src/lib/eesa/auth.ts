@@ -11,7 +11,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
  *   • `tenant_id` comes ONLY from the token's `tenantId` claim, never a client
  *     input. Every DB query is scoped by it.
  *
- * The PUBLIC ingest plane (chups.js → /api/collect) does NOT use this — those
+ * The PUBLIC ingest plane (eesa-analytics.js → /api/collect) does NOT use this — those
  * requests carry no Eesa token and are authenticated by a site tracking key.
  */
 

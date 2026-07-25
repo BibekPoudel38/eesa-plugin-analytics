@@ -10,15 +10,15 @@ import { Pool, type PoolClient, type QueryResultRow } from "pg";
  * continuous aggregates. See db/schema.sql.
  */
 
-const g = globalThis as unknown as { __chupsPool?: Pool };
+const g = globalThis as unknown as { __eesaPool?: Pool };
 
 export function pool(): Pool {
-  if (g.__chupsPool) return g.__chupsPool;
+  if (g.__eesaPool) return g.__eesaPool;
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
-  g.__chupsPool = new Pool({
+  g.__eesaPool = new Pool({
     connectionString,
     max: Number(process.env.PG_POOL_MAX ?? 10),
     idleTimeoutMillis: 30_000,
@@ -31,7 +31,7 @@ export function pool(): Pool {
           ? { rejectUnauthorized: false }
           : undefined,
   });
-  return g.__chupsPool;
+  return g.__eesaPool;
 }
 
 /** Thin typed query helper. */

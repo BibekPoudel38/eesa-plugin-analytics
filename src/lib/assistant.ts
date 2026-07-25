@@ -27,7 +27,7 @@ const dirWord = (a: number, b: number) => (a > b ? "up" : a < b ? "down" : "flat
 /**
  * PLACEHOLDER natural-language analyst — keyword intent matching over the live
  * store, returning real numbers + a visualization spec. To go live, replace the
- * intent block with a Claude call using tool-use: expose typed tools (getOrders,
+ * intent block with a Claude call using tool-use: expose typed tools (getConversions,
  * getVisitors, getTopPages, …) that run these same computations, let
  * claude-opus-4-8 pick and fill them from the question, and format the reply.
  * The return shape (AssistantAnswer) stays identical, so the API route + UI are
@@ -46,33 +46,39 @@ export async function answerQuestion(raw: string): Promise<AssistantAnswer> {
       const t = e.recvTs || e.ts;
       return t >= a && t < b;
     });
-  const sessionsWith = (needle: string, a: number, b: number) => {
+  // Generic conversion heuristics — common path patterns that work for any
+  // kind of site (e-commerce, SaaS, booking). Per-site funnels refine later.
+  const CONVERSION_PATHS = ["confirmation", "thank", "success", "order-complete", "complete", "receipt"];
+  const CHECKOUT_PATHS = ["cart", "checkout", "basket"];
+  const sessionsWithAny = (needles: string[], a: number, b: number) => {
     const s = new Set<string>();
     for (const e of events) {
       const t = e.recvTs || e.ts;
-      if (e.type === "pageview" && e.path.includes(needle) && t >= a && t < b) s.add(e.sessionId);
+      if (e.type === "pageview" && t >= a && t < b) {
+        const p = e.path.toLowerCase();
+        if (needles.some((n) => p.includes(n))) s.add(e.sessionId);
+      }
     }
     return s.size;
   };
-  const ordersIn = (a: number, b: number) => sessionsWith("confirmation.html", a, b);
-  const cartIn = (a: number, b: number) => sessionsWith("cart.html", a, b);
-  const mealPassIn = (a: number, b: number) => sessionsWith("meal-pass.html", a, b);
+  const conversionsIn = (a: number, b: number) => sessionsWithAny(CONVERSION_PATHS, a, b);
+  const checkoutIn = (a: number, b: number) => sessionsWithAny(CHECKOUT_PATHS, a, b);
   const visitorsIn = (a: number, b: number) => new Set(win(a, b).map((e) => e.visitorId)).size;
   const rageIn = (a: number, b: number) => win(a, b).filter((e) => e.type === "rageclick").length;
 
-  // Orders (today vs yesterday)
-  if (/\b(order|orders|purchase|sale|sold|bought|buy|checkout)\b/.test(q)) {
-    const today = ordersIn(t0, now);
-    const yest = ordersIn(y0, t0);
+  // Conversions (today vs yesterday)
+  if (/\b(conversion|order|orders|purchase|sale|sold|bought|buy|signup|sign up|subscribe)\b/.test(q)) {
+    const today = conversionsIn(t0, now);
+    const yest = conversionsIn(y0, t0);
     const d = pct(today, yest);
     const dir = dirWord(today, yest);
     return {
-      text: `Today you had ${today} completed order${today === 1 ? "" : "s"}, versus ${yest} yesterday — ${
+      text: `Today you had ${today} conversion${today === 1 ? "" : "s"}, versus ${yest} yesterday — ${
         dir === "flat" ? "about the same" : `${Math.abs(Math.round(d))}% ${dir}`
       }.`,
       viz: {
         kind: "compare",
-        label: "Completed orders",
+        label: "Conversions",
         a: { label: "Today", value: today },
         b: { label: "Yesterday", value: yest },
         delta: d,
@@ -102,29 +108,20 @@ export async function answerQuestion(raw: string): Promise<AssistantAnswer> {
     };
   }
 
-  // Meal pass
-  if (/\bmeal\s?pass\b/.test(q)) {
-    const c = mealPassIn(t0, now);
+  // Checkout / abandonment
+  if (/\b(cart|basket|checkout|abandon)\b/.test(q)) {
+    const c = checkoutIn(t0, now);
+    const conv = conversionsIn(t0, now);
     return {
-      text: `${c} visitor${c === 1 ? "" : "s"} engaged the Meal Pass page in the last 24h.`,
-      viz: { kind: "metric", label: "Meal Pass interest (24h)", value: String(c) },
-    };
-  }
-
-  // Cart / abandonment
-  if (/\b(cart|basket|abandon)\b/.test(q)) {
-    const c = cartIn(t0, now);
-    const orders = ordersIn(t0, now);
-    return {
-      text: `${c} visitor${c === 1 ? "" : "s"} reached the cart in the last 24h, and ${orders} completed a purchase${
-        c ? ` (${Math.round((orders / c) * 100)}% of carts converted)` : ""
+      text: `${c} visitor${c === 1 ? "" : "s"} reached checkout in the last 24h, and ${conv} converted${
+        c ? ` (${Math.round((conv / c) * 100)}% of checkouts converted)` : ""
       }.`,
       viz: {
         kind: "compare",
-        label: "Cart → order",
-        a: { label: "Reached cart", value: c },
-        b: { label: "Completed", value: orders },
-        delta: c ? pct(orders, c) : 0,
+        label: "Checkout → converted",
+        a: { label: "Reached checkout", value: c },
+        b: { label: "Converted", value: conv },
+        delta: c ? pct(conv, c) : 0,
         goodUp: true,
       },
     };
@@ -179,19 +176,19 @@ export async function answerQuestion(raw: string): Promise<AssistantAnswer> {
   }
 
   // Conversion rate
-  if (/\b(conversion|convert|rate)\b/.test(q)) {
+  if (/\b(convert|rate)\b/.test(q)) {
     const sessions = new Set(win(t0, now).map((e) => e.sessionId)).size;
-    const orders = ordersIn(t0, now);
-    const rate = sessions ? (orders / sessions) * 100 : 0;
+    const conv = conversionsIn(t0, now);
+    const rate = sessions ? (conv / sessions) * 100 : 0;
     return {
-      text: `Conversion in the last 24h is ${rate.toFixed(1)}% — ${orders} order${
-        orders === 1 ? "" : "s"
+      text: `Conversion in the last 24h is ${rate.toFixed(1)}% — ${conv} conversion${
+        conv === 1 ? "" : "s"
       } from ${sessions} session${sessions === 1 ? "" : "s"}.`,
       viz: { kind: "metric", label: "Conversion · 24h", value: `${rate.toFixed(1)}%` },
     };
   }
 
   return {
-    text: "I can answer questions about orders, visitors, cart, traffic sources, top pages, rage clicks, and conversion. Try “How were orders today vs yesterday?” or “Top pages this week.”",
+    text: "I can answer questions about conversions, visitors, checkout, traffic sources, top pages, rage clicks, and conversion rate. Try “How were conversions today vs yesterday?” or “Top pages this week.”",
   };
 }

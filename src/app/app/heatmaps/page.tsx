@@ -85,7 +85,7 @@ export default async function HeatmapsPage({
           <HeatViewer
             page={page}
             mode={mode}
-            domain={live ? "chups-mom2mom-v2.vercel.app" : "sprout.app"}
+            domain={live ? (scope.site.domain || scope.site.name || "your site") : "sprout.app"}
           />
           <p className="mt-3 px-1 text-xs text-muted-foreground">
             Showing an aggregate of{" "}
