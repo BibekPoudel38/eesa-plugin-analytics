@@ -9,7 +9,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireUi(req);
+  const ctx = await requireUi(req, { role: "admin" });
   if (ctx instanceof Response) return ctx;
   const { id } = await params;
   const site = await rotateTrackingKey(ctx.tenantId, id);

@@ -11,7 +11,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const ctx = await requireUi(req);
+  const ctx = await requireUi(req, { role: "admin" });
   if (ctx instanceof Response) return ctx;
   let body: { name?: string; domain?: string; allowedOrigins?: string[] };
   try {

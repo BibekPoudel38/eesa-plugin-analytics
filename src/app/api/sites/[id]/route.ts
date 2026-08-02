@@ -8,7 +8,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireUi(req);
+  const ctx = await requireUi(req, { role: "admin" });
   if (ctx instanceof Response) return ctx;
   const { id } = await params;
   let body: Record<string, unknown>;
@@ -37,7 +37,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireUi(req);
+  const ctx = await requireUi(req, { role: "admin" });
   if (ctx instanceof Response) return ctx;
   const { id } = await params;
   const ok = await deleteSite(ctx.tenantId, id);
