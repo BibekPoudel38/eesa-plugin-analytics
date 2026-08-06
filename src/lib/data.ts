@@ -1,10 +1,14 @@
 import "server-only";
-import * as mock from "@/lib/mock/data";
 import * as live from "@/lib/live/aggregate";
 import { rangeDays } from "@/lib/ranges";
 import type { StoredEvent } from "@/lib/live/types";
 import { loadEvents } from "@/lib/db/load";
 import { listSites, getSite } from "@/lib/db/sites";
+import { listGoals } from "@/lib/db/goals";
+import { recordingIdsFor } from "@/lib/live/recordings";
+import { listFunnels } from "@/lib/db/funnels";
+import { computeFunnel, computeRetention } from "@/lib/funnels/compute";
+import { computeGoalCards, type GoalCard } from "@/lib/goals/compute";
 
 const DAY = 86_400_000;
 
@@ -89,8 +93,13 @@ export async function getSessionsData(
   siteId: string,
   range?: string,
 ) {
-  const { evs } = await windowed(tenantId, siteId, range);
-  return { live: true, sessions: live.liveSessions(Date.now(), evs) };
+  const [{ evs }, recIds] = await Promise.all([
+    windowed(tenantId, siteId, range),
+    // Scoped to THIS tenant+site — a replay from another tenant can never mark
+    // a row as watchable here.
+    recordingIdsFor(tenantId, siteId),
+  ]);
+  return { live: true, sessions: live.liveSessions(Date.now(), evs, recIds) };
 }
 
 export async function getSessionDetail(
@@ -98,8 +107,11 @@ export async function getSessionDetail(
   siteId: string,
   id: string,
 ) {
-  const { evs } = await windowed(tenantId, siteId, "90d");
-  return live.liveSessionDetail(id, Date.now(), evs) ?? null;
+  const [{ evs }, recIds] = await Promise.all([
+    windowed(tenantId, siteId, "90d"),
+    recordingIdsFor(tenantId, siteId),
+  ]);
+  return live.liveSessionDetail(id, Date.now(), evs, recIds) ?? null;
 }
 
 export type Visitor = {
@@ -178,16 +190,71 @@ export async function getFunnelsData(
   tenantId: string,
   siteId: string,
   range?: string,
+  funnelId?: string,
 ) {
-  const { evs } = await windowed(tenantId, siteId, range);
+  const [{ evs }, funnels] = await Promise.all([
+    windowed(tenantId, siteId, range),
+    listFunnels(tenantId, siteId),
+  ]);
+
+  // The tenant's chosen funnel, or their first. Both were `mock.funnel` until
+  // now — the engine and the `funnels` table had existed all along, but only
+  // the MCP/agent surface was ever wired to them, so the dashboard showed a
+  // demo while the agent could compute the real thing.
+  const chosen = funnels.find((f) => f.id === funnelId) ?? funnels[0] ?? null;
+  const goalEvents = evs.map((e) => ({
+    type: e.type,
+    path: e.path,
+    name: e.name ?? null,
+    sessionId: e.sessionId,
+  }));
+  const computed = chosen ? computeFunnel(goalEvents, chosen.steps) : null;
+
   return {
     live: true,
-    // funnel + retention remain demo shapes until per-site funnel definitions
-    // land (P4 — the `funnels` table is already provisioned).
-    funnel: mock.funnel,
-    retention: mock.retention,
+    funnels: funnels.map((f) => ({ id: f.id, name: f.name, steps: f.steps })),
+    funnel: computed && chosen
+      ? { id: chosen.id, name: chosen.name, window: rangeLabel(range), steps: computed.steps, overall: computed.overall, total: computed.total }
+      : null,
+    retention: computeRetention(
+      evs.map((e) => ({ visitorId: e.visitorId, ts: e.recvTs })),
+      Date.now(),
+    ),
     events: live.liveEvents(evs),
   };
+}
+
+/** "Last 30 days" style label for the funnel panel's subtitle. */
+function rangeLabel(range?: string): string {
+  const d = rangeDays(range);
+  return d === 1 ? "Today" : `Last ${d} days`;
+}
+
+/**
+ * Tenant-defined conversion cards for the overview.
+ *
+ * Replaces the hardcoded `completed` / `inCart` heuristics, which guessed at a
+ * business from English path fragments. Returns [] when the tenant has not
+ * defined any goals yet — an empty card row, not invented numbers.
+ */
+export async function getGoalCards(
+  tenantId: string,
+  siteId: string,
+  range?: string,
+): Promise<GoalCard[]> {
+  const [{ evs }, goals] = await Promise.all([
+    windowed(tenantId, siteId, range),
+    listGoals(tenantId, siteId),
+  ]);
+  return computeGoalCards(
+    evs.map((e) => ({
+      type: e.type,
+      path: e.path,
+      name: e.name ?? null,
+      sessionId: e.sessionId,
+    })),
+    goals,
+  );
 }
 
 /** Convenience for endpoints: confirm the site belongs to the tenant. */

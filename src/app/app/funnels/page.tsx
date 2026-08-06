@@ -19,14 +19,17 @@ function cohortBg(v: number | null) {
 export default async function FunnelsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; funnel?: string }>;
 }) {
-  const { range } = await searchParams;
+  const { range, funnel: funnelId } = await searchParams;
   const scope = await currentScope();
   if (!scope.site) return <NoSite />;
-  const { live, funnel, events, retention } = await getFunnelsData(scope.tenantId, scope.site.id, range);
-  const overall =
-    (funnel.steps[funnel.steps.length - 1].users / funnel.steps[0].users) * 100;
+  const { live, funnel, funnels, events, retention } = await getFunnelsData(
+    scope.tenantId, scope.site.id, range, funnelId,
+  );
+  // `overall` now comes from the engine, and `funnel` is null until the tenant
+  // defines one — there is no demo funnel to fall back on any more.
+  const overall = funnel ? funnel.overall * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -41,8 +44,8 @@ export default async function FunnelsPage({
         {/* funnel */}
         <Panel className="lg:col-span-7">
           <PanelHead
-            title={funnel.name}
-            sub={live ? `${funnel.window} · demo` : funnel.window}
+            title={funnel?.name ?? "Funnels"}
+            sub={funnel ? `${funnel.window} · ${fullNumber(funnel.total)} sessions` : "No funnel defined yet"}
             right={
               <div className="text-right">
                 <div className="tabular font-display text-lg font-bold leading-none text-foreground">
@@ -55,7 +58,35 @@ export default async function FunnelsPage({
             }
           />
           <div className="p-5">
-            <FunnelChart steps={funnel.steps} />
+            {funnel && funnel.steps.length ? (
+              <FunnelChart steps={funnel.steps} />
+            ) : (
+              <div className="space-y-2 py-10 text-center">
+                <p className="text-sm font-medium text-foreground">No funnel defined for this site</p>
+                <p className="mx-auto max-w-sm text-xs text-muted-foreground">
+                  A funnel is an ordered list of steps — each one the same kind of rule a
+                  conversion card uses. Define them on the Conversion cards page.
+                </p>
+              </div>
+            )}
+            {funnels.length > 1 && (
+              <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border pt-3">
+                {funnels.map((f) => (
+                  <a
+                    key={f.id}
+                    href={`?funnel=${encodeURIComponent(f.id)}${range ? `&range=${encodeURIComponent(range)}` : ""}`}
+                    className={
+                      "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors " +
+                      (f.id === funnel?.id
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {f.name}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </Panel>
 
@@ -63,7 +94,7 @@ export default async function FunnelsPage({
         <Panel className="lg:col-span-5">
           <PanelHead
             title="Weekly retention"
-            sub={live ? "% of cohort still active · demo" : "% of cohort still active"}
+            sub="% of cohort still active"
           />
           <div className="overflow-x-auto p-4">
             <table className="w-full border-separate border-spacing-1 text-center">
