@@ -35,7 +35,10 @@ const SPEEDS = [1, 2, 4, 8];
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 3;
 
-export function ReplayPlayer({ id }: { id: string }) {
+// `siteId` is required, not optional: /api/rec/[id] is now tenant+site scoped
+// (it used to be unauthenticated), so a request without it is a 400 and the
+// player would show "Couldn't load the replay engine" with no clue why.
+export function ReplayPlayer({ id, siteId }: { id: string; siteId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const replayerRef = useRef<any>(null);
@@ -97,7 +100,10 @@ export function ReplayPlayer({ id }: { id: string }) {
     (async () => {
       try {
         await ensureRrweb();
-        const res = await fetch(`/api/rec/${id}`, { cache: "no-store" });
+        const res = await fetch(
+          `/api/rec/${encodeURIComponent(id)}?site=${encodeURIComponent(siteId)}`,
+          { cache: "no-store" },
+        );
         if (res.status === 404) return !cancelled && setStatus("empty");
         const data = await res.json();
         if (cancelled) return;
@@ -139,7 +145,7 @@ export function ReplayPlayer({ id }: { id: string }) {
         replayerRef.current?.destroy?.();
       } catch {}
     };
-  }, [id, applyScale, tick]);
+  }, [id, siteId, applyScale, tick]);
 
   // recompute on container resize (covers window resize + fullscreen relayout)
   useEffect(() => {

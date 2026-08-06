@@ -71,7 +71,16 @@ export default async function SessionReplayPage({
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="lg:col-span-8">
-          <ReplayPlayer id={id} />
+          {/* No selected site means no tenant+site scope, and the replay API is
+              scoped — so there is nothing to ask for. Say that rather than
+              mounting a player that can only fail. */}
+          {scope.site ? (
+            <ReplayPlayer id={id} siteId={scope.site.id} />
+          ) : (
+            <div className="grid h-64 place-items-center rounded-xl border border-border bg-card text-sm text-muted-foreground">
+              Select a site to watch this replay.
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-5 lg:col-span-4">

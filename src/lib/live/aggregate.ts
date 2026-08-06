@@ -1,6 +1,5 @@
 import "server-only";
 import { allEvents } from "./store";
-import { recordingIds } from "./recordings";
 import type { StoredEvent } from "./types";
 import type {
   Kpi,
@@ -509,20 +508,29 @@ function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
   };
 }
 
-export function liveSessions(now = Date.now(), evs?: StoredEvent[]): SessionRow[] {
-  const recs = recordingIds();
+// `recIds` is passed IN rather than read from the recordings store. This module
+// is the pure aggregation layer; reaching into the store from here meant it
+// could only ever see a process-global, tenant-less set — which is exactly what
+// had to go when replays became partitioned by (tenant, site). Callers hold the
+// scope, so callers resolve the ids.
+export function liveSessions(
+  now = Date.now(),
+  evs?: StoredEvent[],
+  recIds: Set<string> = new Set(),
+): SessionRow[] {
   return sessionize(evs ?? allEvents())
     .slice(0, 24)
-    .map((s) => toRow(s, recs, now));
+    .map((s) => toRow(s, recIds, now));
 }
 
 export function liveSessionDetail(
   id: string,
   now = Date.now(),
   evs?: StoredEvent[],
+  recIds: Set<string> = new Set(),
 ): SessionRow | null {
   const s = sessionize(evs ?? allEvents()).find((x) => x.id === id);
-  return s ? toRow(s, recordingIds(), now) : null;
+  return s ? toRow(s, recIds, now) : null;
 }
 
 // ---- events table ---------------------------------------------------------
