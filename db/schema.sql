@@ -128,6 +128,40 @@ create table if not exists funnels (
 create index if not exists funnels_tenant_site_idx on funnels (tenant_id, site_id);
 
 -- ---------------------------------------------------------------------------
+-- Goals — tenant-defined conversion cards.
+--
+-- Replaces the hardcoded English path guesses that used to decide "converted"
+-- ("confirmation", "thank", "cart", "checkout", …). Those only ever worked for
+-- an English e-commerce site; a burrito shop tracking /menu/burrito, or any
+-- site in another language, got nothing. A goal is whatever THIS tenant says it
+-- is: a free-text name plus one rule.
+--
+--   kind='path'   value matched against pageview paths, per `operator`
+--   kind='event'  value matched against a custom event name (exact, folded)
+--
+-- Scoped to (tenant, site) exactly like funnels — one tenant can never see or
+-- compute another's goals. The IT person who sets a site up owns these; nothing
+-- here is global or hardcoded.
+-- ---------------------------------------------------------------------------
+create table if not exists goals (
+    id          uuid primary key default gen_random_uuid(),
+    tenant_id   text not null,
+    site_id     uuid not null,
+    name        text not null,                       -- free text: "Burrito", "Reached checkout"
+    kind        text not null default 'path',        -- path | event
+    operator    text not null default 'contains',    -- contains | starts_with | exact  (path only)
+    value       text not null,                       -- path fragment, or custom event name
+    icon        text not null default '',            -- optional lucide icon name for the card
+    position    integer not null default 0,          -- card order on the overview
+    active      boolean not null default true,
+    created_by  text not null default '',
+    created_at  timestamptz not null default now(),
+    updated_at  timestamptz not null default now(),
+    unique (tenant_id, site_id, name)
+);
+create index if not exists goals_tenant_site_idx on goals (tenant_id, site_id, position);
+
+-- ---------------------------------------------------------------------------
 -- Session-replay pointers (P4). Blobs live in object storage (MinIO/S3);
 -- this table only points at them so a replay can be located + retention run.
 -- ---------------------------------------------------------------------------

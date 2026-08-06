@@ -5,6 +5,7 @@ import {
   Clapperboard,
   Filter,
   Code2,
+  Goal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,5 +27,6 @@ export const navItems: NavItem[] = [
 ];
 
 export const setupItems: NavItem[] = [
+  { href: "/app/goals", label: "Conversion cards", icon: Goal, hint: "Define what counts as a conversion" },
   { href: "/app/install", label: "Install", icon: Code2, hint: "Add tracking to your site" },
 ];

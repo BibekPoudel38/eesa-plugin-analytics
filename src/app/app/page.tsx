@@ -1,15 +1,16 @@
-import { CircleCheckBig, ShoppingCart } from "lucide-react";
+import Link from "next/link";
+import { SlidersHorizontal } from "lucide-react";
 import { PageHeader, DeltaPill } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { KebabButton } from "@/components/app/segmented";
 import { RangeTabs } from "@/components/app/range-filter";
 import { DataBadge } from "@/components/app/data-badge";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { MetricTile } from "@/components/dashboard/metric-tile";
+import { GoalTile, NoGoals } from "@/components/dashboard/goal-tile";
 import { AreaChart } from "@/components/charts/area-chart";
 import { BarList } from "@/components/charts/bar-list";
 import { Donut } from "@/components/charts/donut";
-import { getOverview, getLiveStatus, getVisitorsData } from "@/lib/data";
+import { getOverview, getLiveStatus, getGoalCards } from "@/lib/data";
 import { compactNumber, duration, percent, relativeTime } from "@/lib/format";
 import { axisLabels } from "@/lib/ranges";
 import { currentScope } from "@/lib/eesa/scope";
@@ -37,11 +38,11 @@ export default async function OverviewPage({
   const { live, kpis, trend, sources, topPages, devices, locations, activity } =
     await getOverview(scope.tenantId, site.id, range);
   const status = await getLiveStatus(scope.tenantId, site.id);
-  const { visitors } = await getVisitorsData(scope.tenantId, site.id, range);
-  const conversions = {
-    completed: visitors.filter((v) => v.completed).length,
-    inCart: visitors.filter((v) => v.inCart).length,
-  };
+
+  // Conversion cards are whatever THIS tenant defined — see lib/goals/compute.
+  // They used to be two hardcoded English path guesses ("confirmation",
+  // "cart"), which measured nothing for a site that doesn't use those words.
+  const goalCards = await getGoalCards(scope.tenantId, site.id, range);
   const totalSource = sources.reduce((s, x) => s + x.value, 0);
   const sessionsKpi = kpis.find((k) => k.key === "sessions");
   const totalSessions = trend.sessions.reduce((a, b) => a + b, 0);
@@ -71,24 +72,23 @@ export default async function OverviewPage({
         ))}
       </div>
 
-      {/* conversion signals — clickable through to the matching visitors */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <MetricTile
-          label="Conversions"
-          value={conversions.completed}
-          sub="Reached a confirmation / thank-you page"
-          href="/app/visitors?f=completed"
-          icon={CircleCheckBig}
-          color="var(--pine)"
-        />
-        <MetricTile
-          label="Reached checkout"
-          value={conversions.inCart}
-          sub="Visitors who reached a cart / checkout page"
-          href="/app/visitors?f=cart"
-          icon={ShoppingCart}
-          color="var(--teal)"
-        />
+      {/* Conversion cards — defined by this tenant, not guessed. */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Conversions</h2>
+        <Link
+          href="/app/goals"
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-ember"
+        >
+          <SlidersHorizontal className="size-3.5" />
+          Manage cards
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {goalCards.length === 0 ? (
+          <NoGoals />
+        ) : (
+          goalCards.map((c, i) => <GoalTile key={c.id} card={c} index={i} />)
+        )}
       </div>
 
       {/* trend + sources */}
