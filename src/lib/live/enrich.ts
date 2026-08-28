@@ -49,3 +49,26 @@ export function deriveSource(referrer: string, siteOrigin: string): string {
     return "social";
   return "referral";
 }
+
+/**
+ * Normalise the display mode a browser reported.
+ *
+ * The set of display modes is closed, so this is an allowlist rather than a
+ * scrub: anything unrecognised becomes "", which reads as "the browser did not
+ * say". That matters because this value reaches dashboards and group-by
+ * queries, and an arbitrary string from a page we do not control would land
+ * there as its own category.
+ */
+const DISPLAY_MODES = new Set([
+  "browser",
+  "standalone",
+  "minimal-ui",
+  "fullscreen",
+  "window-controls-overlay",
+]);
+
+export function cleanDisplayMode(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const v = raw.trim().toLowerCase();
+  return DISPLAY_MODES.has(v) ? v : "";
+}

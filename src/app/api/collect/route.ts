@@ -3,7 +3,7 @@ import type { Batch } from "@/lib/live/types";
 import { resolveTrackingKey, originAllowed } from "@/lib/db/sites";
 import { insertEvents, type EventInsert } from "@/lib/db/events";
 import { cleanUserId, linkIdentity } from "@/lib/db/identities";
-import { splitLocation, deriveSource } from "@/lib/live/enrich";
+import { splitLocation, deriveSource, cleanDisplayMode } from "@/lib/live/enrich";
 
 // Public write endpoint — anonymous browsers on tracked sites. No Eesa token;
 // authenticated by the site tracking key (meta.siteId). Always dynamic.
@@ -119,6 +119,7 @@ export async function POST(req: Request) {
     device: batch.meta.device || "",
     browser: batch.meta.browser || "",
     os: batch.meta.os || "",
+    displayMode: cleanDisplayMode(batch.meta.displayMode),
     country,
     city,
     x: typeof e.x === "number" ? e.x : null,

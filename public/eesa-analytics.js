@@ -116,6 +116,29 @@
     if (/Linux/.test(ua)) return "Linux";
     return "Other";
   }
+  // How the page is being displayed. A site installed to the home screen runs
+  // in "standalone" and is, to the person using it, an app — but it is the same
+  // document as the browser tab, so without this the two are indistinguishable
+  // in the data and installed usage cannot be measured at all.
+  function displayMode() {
+    try {
+      // iOS shipped standalone web apps years before display-mode existed and
+      // still reports them ONLY through this non-standard flag, so it has to be
+      // checked first or every iPhone home-screen launch reads as "browser".
+      if (window.navigator.standalone === true) return "standalone";
+      if (!window.matchMedia) return "";
+      var modes = ["fullscreen", "standalone", "minimal-ui", "browser"];
+      for (var i = 0; i < modes.length; i++) {
+        if (window.matchMedia("(display-mode: " + modes[i] + ")").matches) {
+          return modes[i];
+        }
+      }
+    } catch (e) {
+      /* matchMedia can throw in exotic embeddings; unknown is better than wrong */
+    }
+    return "";
+  }
+
   function meta() {
     return {
       siteId: siteId,
@@ -128,6 +151,7 @@
       os: os(),
       viewportW: window.innerWidth,
       viewportH: window.innerHeight,
+      displayMode: displayMode(),
     };
   }
 

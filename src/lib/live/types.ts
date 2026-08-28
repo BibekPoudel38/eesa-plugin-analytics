@@ -49,6 +49,12 @@ export type Meta = {
   os: string;
   viewportW: number;
   viewportH: number;
+  /**
+   * How the page is displayed: "standalone" when it was launched from the home
+   * screen (an installed PWA), "browser" in a normal tab, or "" when the
+   * browser would not say. Distinguishes app-like usage from browser usage.
+   */
+  displayMode?: string;
   /** "City, CC" — enriched server-side from request geo headers (never from the browser). */
   location?: string;
   /** Origin of the tracked site, read server-side from the collect request's Origin/Referer. */

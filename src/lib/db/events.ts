@@ -23,6 +23,8 @@ export interface EventInsert {
   device: string;
   browser: string;
   os: string;
+  /** "standalone" (installed to home screen), "browser", or "" if unknown. */
+  displayMode: string;
   country: string;
   city: string;
   x: number | null;
@@ -34,7 +36,7 @@ export interface EventInsert {
   props: Record<string, unknown> | null;
 }
 
-const NCOLS = 23; // must match the column list below
+const NCOLS = 24; // must match the column list below
 
 /**
  * Bulk-insert a batch of events for one tenant/site. Builds a single
@@ -72,6 +74,7 @@ export async function insertEvents(
       e.device,
       e.browser,
       e.os,
+      e.displayMode,
       e.country,
       e.city,
       e.x,
@@ -87,8 +90,8 @@ export async function insertEvents(
   await query(
     `insert into events
        (tenant_id, site_id, ts, client_ts, type, path, visitor_id, session_id,
-        user_id, referrer, source, device, browser, os, country, city, x, y,
-        target, text, depth, name, props)
+        user_id, referrer, source, device, browser, os, display_mode, country,
+        city, x, y, target, text, depth, name, props)
      values ${tuples.join(", ")}`,
     params,
   );

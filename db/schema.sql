@@ -244,3 +244,14 @@ create table if not exists members (
     created_at  timestamptz not null default now(),
     primary key (tenant_id, user_id)
 );
+
+-- How the page was displayed when the event fired: "standalone" for a site
+-- launched from the home screen, "browser" for a normal tab, "" when the
+-- browser would not say. Added because an installed PWA and a browser tab load
+-- the SAME document, so without recording it the two are indistinguishable and
+-- installed usage cannot be measured at all. Backfilled as '' — events captured
+-- before this column existed genuinely do not know, and '' says exactly that
+-- rather than guessing "browser" and inventing a number.
+alter table events add column if not exists display_mode text not null default '';
+create index if not exists events_tenant_site_display_ts_idx
+    on events (tenant_id, site_id, display_mode, ts desc) where display_mode <> '';
