@@ -65,6 +65,12 @@ const DISPLAY_MODES = new Set([
   "minimal-ui",
   "fullscreen",
   "window-controls-overlay",
+  // Not a CSS display mode: a NATIVE app posting to /api/collect directly.
+  // A native client has no document and no browser, so nothing else in the
+  // payload distinguishes it from mobile web — without this, app usage lands
+  // in the same bucket as a phone browser and the two can never be separated.
+  // The field is really "which surface was this shown on", and app is one.
+  "app",
 ]);
 
 export function cleanDisplayMode(raw: unknown): string {

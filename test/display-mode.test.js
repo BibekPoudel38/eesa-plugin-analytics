@@ -43,5 +43,22 @@ for (const [name, env, expected] of CASES) {
       (ok ? "" : `   EXPECTED ${JSON.stringify(expected)}`),
   );
 }
+// The ingest allowlist is what actually decides which values survive to the
+// database, and "app" is the one a native client sends. A tracker that never
+// emits it is no reason to leave it untested — nothing else in a native
+// payload distinguishes an app from a phone browser.
+const enrich = fs.readFileSync("src/lib/live/enrich.ts", "utf8");
+const allowlist = enrich.slice(
+  enrich.indexOf("const DISPLAY_MODES"),
+  enrich.indexOf("export function cleanDisplayMode"),
+);
+for (const [value, expected] of [["app", true], ["standalone", true], ["browser", true], ["nonsense", false]]) {
+  const ok = allowlist.includes(`"${value}"`) === expected;
+  ok ? pass++ : fail++;
+  console.log(
+    `  ${ok ? "PASS" : "FAIL"}  ${("allowlist accepts " + value).padEnd(30)} -> ${expected}`,
+  );
+}
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
