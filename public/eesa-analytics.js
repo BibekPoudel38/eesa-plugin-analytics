@@ -73,24 +73,46 @@
 
   // ---- environment sniffing ---------------------------------------------
   var ua = navigator.userAgent;
+
+  // iPadOS 13+ ships a DESKTOP Safari user agent — it says "Macintosh" and
+  // never "iPad" — so an iPad is indistinguishable from a Mac by UA alone.
+  // The one reliable difference is that no Mac reports a touch screen.
+  var isIPadOS =
+    /Macintosh/.test(ua) &&
+    typeof navigator.maxTouchPoints === "number" &&
+    navigator.maxTouchPoints > 1;
+
   function device() {
-    if (/Tablet|iPad/i.test(ua)) return "Tablet";
+    if (/Tablet|iPad/i.test(ua) || isIPadOS) return "Tablet";
     if (/Mobi|Android|iPhone|iPod/i.test(ua)) return "Mobile";
     return "Desktop";
   }
   function browser() {
-    if (/Edg\//.test(ua)) return "Edge";
-    if (/OPR\/|Opera/.test(ua)) return "Opera";
-    if (/Firefox\//.test(ua)) return "Firefox";
-    if (/Chrome\//.test(ua)) return "Chrome";
+    // iOS forces every browser onto WebKit, and each brands itself with its
+    // own suffix: Chrome is CriOS, Firefox FxiOS, Edge EdgiOS, Opera OPiOS.
+    // None of them contain "Chrome/" or "Firefox/", so without these first
+    // they all fall through to the Safari check and a site's entire iPhone
+    // audience is reported as Safari regardless of what it actually uses.
+    if (/EdgiOS\//.test(ua) || /Edg\//.test(ua)) return "Edge";
+    if (/OPiOS\//.test(ua) || /OPR\/|Opera/.test(ua)) return "Opera";
+    if (/FxiOS\//.test(ua) || /Firefox\//.test(ua)) return "Firefox";
+    // Samsung Internet ships "Chrome/" in its UA too, so it must be checked
+    // before Chrome or it disappears into the Chrome bucket.
+    if (/SamsungBrowser\//.test(ua)) return "Samsung Internet";
+    if (/CriOS\//.test(ua) || /Chrome\//.test(ua)) return "Chrome";
     if (/Safari\//.test(ua)) return "Safari";
     return "Other";
   }
   function os() {
     if (/Windows/.test(ua)) return "Windows";
-    if (/Mac OS X/.test(ua)) return "macOS";
+    // iOS MUST be tested before macOS. Every iPhone and iPad user agent
+    // contains the literal string "like Mac OS X", so a /Mac OS X/ test
+    // matches them first and the iOS branch below can never be reached —
+    // which silently files every iPhone in a site's traffic under macOS.
+    if (/iPhone|iPad|iPod/.test(ua) || isIPadOS) return "iOS";
+    if (/Mac OS X|Macintosh/.test(ua)) return "macOS";
     if (/Android/.test(ua)) return "Android";
-    if (/iPhone|iPad|iPod/.test(ua)) return "iOS";
+    // Android user agents also contain "Linux", so this stays last.
     if (/Linux/.test(ua)) return "Linux";
     return "Other";
   }
