@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Batch } from "@/lib/live/types";
 import { resolveTrackingKey, originAllowed } from "@/lib/db/sites";
 import { insertEvents, type EventInsert } from "@/lib/db/events";
+import { cleanUserId, linkIdentity } from "@/lib/db/identities";
 import { splitLocation, deriveSource } from "@/lib/live/enrich";
 
 // Public write endpoint — anonymous browsers on tracked sites. No Eesa token;
@@ -89,13 +90,30 @@ export async function POST(req: Request) {
   const referrer = batch.meta.referrer || "";
   const source = deriveSource(referrer, origin);
 
+  // Identity. The visitor id and the user id arrive together on the same batch,
+  // from the same browser — a site can only ever claim the visitor it IS. The
+  // link is written before the events so that an identify() with nothing queued
+  // behind it (someone who signs in and immediately closes the tab) still binds
+  // this device to the person.
+  const visitorId = batch.meta.visitorId || "";
+  const userId = cleanUserId(batch.meta.userId);
+  if (userId && visitorId) {
+    try {
+      await linkIdentity(site.tenantId, site.siteId, visitorId, userId);
+    } catch {
+      // A failed link must never cost the site its events; the next batch from
+      // this visitor carries the same id and will make the link again.
+    }
+  }
+
   const rows: EventInsert[] = batch.events.map((e) => ({
     ts: now, // server receive time (authoritative)
     clientTs: typeof e.ts === "number" ? new Date(e.ts) : null,
     type: e.type,
     path: e.path || "",
-    visitorId: batch.meta.visitorId || "",
+    visitorId,
     sessionId: batch.meta.sessionId || "",
+    userId,
     referrer,
     source,
     device: batch.meta.device || "",

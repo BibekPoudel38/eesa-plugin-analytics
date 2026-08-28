@@ -37,6 +37,12 @@ export type Meta = {
   siteId: string;
   visitorId: string;
   sessionId: string;
+  /**
+   * The tracked site's OWN user identifier, set by its identify() call and
+   * opaque to us — a customer id, an account id, whatever that site has.
+   * Absent or "" while the visitor is anonymous, which is the normal state.
+   */
+  userId?: string;
   referrer: string;
   device: "Desktop" | "Mobile" | "Tablet";
   browser: string;
@@ -60,6 +66,12 @@ export type StoredEvent = RawEvent & {
   siteId: string;
   visitorId: string;
   sessionId: string;
+  /**
+   * Resolved identity: the id stamped at ingest, or — for events captured
+   * before this visitor signed in — the one their `identities` row supplies.
+   * "" while the visitor has never been identified on any visit.
+   */
+  userId: string;
   referrer: string;
   device: Meta["device"];
   browser: string;

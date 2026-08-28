@@ -126,6 +126,7 @@ export async function ingest(batch: Batch): Promise<number> {
     siteId: batch.meta.siteId,
     visitorId: batch.meta.visitorId,
     sessionId: batch.meta.sessionId,
+    userId: batch.meta.userId || "",
     referrer: batch.meta.referrer,
     device: batch.meta.device,
     browser: batch.meta.browser,

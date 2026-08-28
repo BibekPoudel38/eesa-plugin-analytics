@@ -20,6 +20,7 @@ interface EventRow {
   path: string;
   visitor_id: string;
   session_id: string;
+  user_id: string;
   referrer: string;
   device: string;
   browser: string;
@@ -46,13 +47,23 @@ export async function loadEvents(
   sinceMs: number,
   limit = 200_000,
 ): Promise<StoredEvent[]> {
+  // Identity is resolved HERE, not stored back onto the row. `e.user_id` is set
+  // only on events captured after the visitor signed in; the join supplies the
+  // same person for everything they did before that, which is what makes
+  // identification retroactive without ever rewriting history. A visitor who
+  // has never identified on any visit falls through to "".
   const rows = await query<EventRow>(
-    `select ts, client_ts, type, path, visitor_id, session_id, referrer,
-            device, browser, os, country, city, x, y, target, text, depth,
-            name, props
-       from events
-      where tenant_id = $1 and site_id = $2 and ts >= $3
-      order by ts asc
+    `select e.ts, e.client_ts, e.type, e.path, e.visitor_id, e.session_id,
+            coalesce(nullif(e.user_id, ''), i.user_id, '') as user_id,
+            e.referrer, e.device, e.browser, e.os, e.country, e.city,
+            e.x, e.y, e.target, e.text, e.depth, e.name, e.props
+       from events e
+       left join identities i
+              on i.tenant_id  = e.tenant_id
+             and i.site_id    = e.site_id
+             and i.visitor_id = e.visitor_id
+      where e.tenant_id = $1 and e.site_id = $2 and e.ts >= $3
+      order by e.ts asc
       limit $4`,
     [tenantId, siteId, new Date(sinceMs), limit],
   );
@@ -74,6 +85,7 @@ export async function loadEvents(
       siteId,
       visitorId: r.visitor_id,
       sessionId: r.session_id,
+      userId: r.user_id ?? "",
       referrer: r.referrer,
       device: (r.device || "Desktop") as StoredEvent["device"],
       browser: r.browser,

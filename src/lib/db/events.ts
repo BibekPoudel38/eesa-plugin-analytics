@@ -16,6 +16,8 @@ export interface EventInsert {
   path: string;
   visitorId: string;
   sessionId: string;
+  /** Site's own user id if the visitor was identified when this fired; "" otherwise. */
+  userId: string;
   referrer: string;
   source: string;
   device: string;
@@ -32,7 +34,7 @@ export interface EventInsert {
   props: Record<string, unknown> | null;
 }
 
-const NCOLS = 22; // must match the column list below
+const NCOLS = 23; // must match the column list below
 
 /**
  * Bulk-insert a batch of events for one tenant/site. Builds a single
@@ -64,6 +66,7 @@ export async function insertEvents(
       e.path,
       e.visitorId,
       e.sessionId,
+      e.userId,
       e.referrer,
       e.source,
       e.device,
@@ -84,8 +87,8 @@ export async function insertEvents(
   await query(
     `insert into events
        (tenant_id, site_id, ts, client_ts, type, path, visitor_id, session_id,
-        referrer, source, device, browser, os, country, city, x, y, target,
-        text, depth, name, props)
+        user_id, referrer, source, device, browser, os, country, city, x, y,
+        target, text, depth, name, props)
      values ${tuples.join(", ")}`,
     params,
   );

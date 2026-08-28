@@ -49,7 +49,16 @@
     } catch (e) {}
     return null;
   }
+  function lsDel(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
   var visitorId = ls("eesa_vid") || (function () { var v = uid(); ls("eesa_vid", v); return v; })();
+  // The tracked site's OWN user id, set by identify(). Persisted so a visitor
+  // who is still signed in is known from their FIRST pageview on the next
+  // visit, rather than only from the next time they log in. Kept separate from
+  // the visitor id on purpose: the device id is ours and permanent, the
+  // identity is the site's and comes and goes with their session.
+  var userId = ls("eesa_uid") || "";
   function sessionId() {
     var now = Date.now();
     var id = ls("eesa_sid");
@@ -90,6 +99,7 @@
       siteId: siteId,
       visitorId: visitorId,
       sessionId: sessionId(),
+      userId: userId,
       referrer: document.referrer || "",
       device: device(),
       browser: browser(),
@@ -116,9 +126,12 @@
     if (flushTimer) return;
     flushTimer = setTimeout(flush, 5000);
   }
-  function flush(useBeacon) {
+  // `force` sends a meta-only batch when nothing is queued. identify() needs
+  // that: a visitor who signs in and immediately closes the tab must still
+  // leave the visitor→user link behind them.
+  function flush(useBeacon, force) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    if (!queue.length) return;
+    if (!queue.length && !force) return;
     var payload = JSON.stringify({ meta: meta(), events: queue.splice(0) });
     try {
       if (useBeacon && navigator.sendBeacon) {
@@ -317,11 +330,56 @@
   });
   window.addEventListener("pagehide", function () { endpage(true); });
 
-  // ---- public API: eesa('event_name', { props }) -----------------------
+  // ---- identity ----------------------------------------------------------
+  var MAX_UID = 128;
+
+  // Tell us who this visitor is. Call it after YOUR login, with YOUR id — a
+  // customer id, an account id, whatever you have. We treat it as an opaque
+  // string and never parse it.
+  //
+  // Everything this device did BEFORE the call is claimed too: the server keeps
+  // a visitor→user link and resolves the earlier, anonymous events through it
+  // when they are read. Those events are never rewritten.
+  function identify(id) {
+    var next = id == null ? "" : String(id).trim().slice(0, MAX_UID);
+    if (!next || next === userId) return; // nothing new to tell the server
+    userId = next;
+    ls("eesa_uid", next);
+    flush(false, true);
+  }
+
+  // Forget them — call on logout.
+  function reset() {
+    if (!userId) return; // already anonymous
+    flush(); // anything still queued belongs to the OUTGOING visitor
+    userId = "";
+    lsDel("eesa_uid");
+    // Rotate the device id as well. Without this the next person on a shared
+    // phone keeps browsing under a visitor id the server still maps to whoever
+    // signed in last, and their session is attributed to that person.
+    visitorId = uid();
+    ls("eesa_vid", visitorId);
+    lsDel("eesa_sid");
+    lsDel("eesa_sid_exp");
+  }
+
+  // ---- public API --------------------------------------------------------
+  //   eesa('add_to_cart', { item: 'Blue T-Shirt' })   a custom event
+  //   eesa('identify', 'cust_1042')                   name the visitor
+  //   eesa('reset')                                   forget them, on logout
+  //
+  // Both spellings work — eesa.identify('cust_1042') reads better, while the
+  // string form is what a call queued by the loader stub replays as, before
+  // this file had arrived to define any methods.
   var prevApi = window.eesa;
-  window.eesa = function (name, props) {
-    push({ type: "custom", name: String(name), props: props || {} });
+  window.eesa = function (name, arg) {
+    var n = String(name);
+    if (n === "identify") return identify(arg);
+    if (n === "reset") return reset();
+    push({ type: "custom", name: n, props: arg || {} });
   };
+  window.eesa.identify = identify;
+  window.eesa.reset = reset;
   // replay any calls queued before load: window.eesa = window.eesa || function(){(eesa.q=eesa.q||[]).push(arguments)}
   if (prevApi && prevApi.q && prevApi.q.length) {
     prevApi.q.forEach(function (args) { window.eesa.apply(null, args); });

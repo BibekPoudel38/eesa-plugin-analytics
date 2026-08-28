@@ -74,6 +74,17 @@ select create_hypertable('events', 'ts', chunk_time_interval => interval '7 days
 create index if not exists events_tenant_site_ts_idx on events (tenant_id, site_id, ts desc);
 create index if not exists events_tenant_site_type_ts_idx on events (tenant_id, site_id, type, ts desc);
 
+-- Identity, stamped at ingest for events captured AFTER the site called
+-- identify(). Events captured before it stay '' forever — see `identities`
+-- below for how those are resolved without ever rewriting a row.
+-- ALTER rather than a column in the create above: the table already exists on
+-- deployed installs, where `create table if not exists` is a no-op.
+alter table events add column if not exists user_id text not null default '';
+-- Partial: the overwhelming majority of rows are anonymous, and indexing them
+-- would double the index for no reader.
+create index if not exists events_tenant_site_user_ts_idx
+    on events (tenant_id, site_id, user_id, ts desc) where user_id <> '';
+
 -- Hourly rollup powering the dashboards (visitors/pageviews per site/path/etc).
 -- Continuous aggregate refreshes incrementally; dashboards read this, not raw.
 create materialized view if not exists events_hourly
@@ -110,6 +121,48 @@ begin
     perform add_retention_policy('events', interval '90 days');
 exception when others then null;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Identities — the visitor→user link that makes identification RETROACTIVE.
+--
+-- A visitor browses anonymously, then signs in. The events already written are
+-- never rewritten: they keep user_id = '' forever, exactly as captured. Instead
+-- the site calls identify() once, one row lands here, and every read resolves
+-- that visitor's whole history — before and after the login — to one person.
+--
+-- Why a mapping row and not an UPDATE on `events`:
+--   • `events` is a hypertable behind a continuous aggregate. Rewriting a
+--     visitor's rows on every login sprays writes across chunks, and the
+--     already-materialised `events_hourly` buckets would silently disagree with
+--     the raw rows underneath them.
+--   • One insert covers ALL of that visitor's history at once, including rows
+--     already rolled up and rows older than any backfill window would reach.
+--   • It is reversible. Deleting the row un-identifies the visitor; no history
+--     was destroyed to make the link, so none is destroyed to undo it.
+--
+-- `user_id` is the SITE's own identifier, opaque to this plugin — a Chups
+-- customer id, another tenant's account id, whatever they have. We never parse
+-- it, so the capability is portable to any site without knowing its schema.
+--
+-- One user has many visitor ids (one per device/browser); a visitor id maps to
+-- at most one user, hence the primary key. Re-identifying the same visitor as a
+-- different user overwrites — that is a shared device, and last-in wins.
+-- ---------------------------------------------------------------------------
+create table if not exists identities (
+    tenant_id   text not null,
+    site_id     uuid not null,
+    visitor_id  text not null,
+    user_id     text not null,
+    first_seen  timestamptz not null default now(),  -- when this link was first made
+    -- Last time this visitor's identity CHANGED, not the last identify() call:
+    -- a signed-in visitor re-sends the same id on every batch, and rewriting
+    -- the row each time would mean a write every few seconds per open tab.
+    updated_at  timestamptz not null default now(),
+    primary key (tenant_id, site_id, visitor_id)
+);
+-- Reverse lookup: every device a given user has been seen on.
+create index if not exists identities_tenant_site_user_idx
+    on identities (tenant_id, site_id, user_id);
 
 -- ---------------------------------------------------------------------------
 -- Funnels — named, ordered step definitions (steps are event/path matchers).
