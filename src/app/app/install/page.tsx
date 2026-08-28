@@ -41,6 +41,7 @@ export default async function InstallPage() {
   // tracking key, which maps ingest back to this tenant + site.
   const snippet = `<script src="${origin}/eesa-analytics.js" data-site="${site.trackingKey}" defer></script>`;
   const customExample = `// fire a custom event whenever something important happens\neesa('signup', { plan: 'pro' });`;
+  const identifyExample = `// 1. when your own login succeeds\neesa.identify('cust_1042');\n\n// 2. AND on any page load where they are already signed in\nif (currentUser) eesa.identify(currentUser.id);\n\n// on logout\neesa.reset();`;
 
   return (
     <div className="space-y-6">
@@ -114,7 +115,37 @@ export default async function InstallPage() {
 
           <Panel>
             <PanelHead
-              title="2 · Track custom events"
+              title="2 · Name signed-in visitors"
+              sub="Pass your own user id — everything they did before it counts too"
+            />
+            <div className="space-y-3 p-5">
+              <CodeBlock code={identifyExample} caption="example" />
+              <p className="text-sm text-muted-foreground">
+                Pass whatever id you already have — a customer id, an account
+                id. We store it as-is and never parse it. Everything this
+                visitor did <em>before</em> they signed in is claimed too: the
+                pages they browsed anonymously resolve to them from then on,
+                and none of that history is rewritten to do it.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Call it in <strong>both</strong> places above. If you only call
+                it on login, someone who returns tomorrow already signed in
+                stays anonymous until the next time they happen to log in.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-mono text-xs">eesa.reset()</span> clears
+                the identity and starts a fresh anonymous visitor, so the next
+                person on a shared computer is never recorded as the last one.
+                Use a stable internal id rather than an email, and never a
+                guest or temporary id — if the id changes, one person becomes
+                two.
+              </p>
+            </div>
+          </Panel>
+
+          <Panel>
+            <PanelHead
+              title="3 · Track custom events"
               sub="Optional — measure the moments that matter"
             />
             <div className="space-y-3 p-5">

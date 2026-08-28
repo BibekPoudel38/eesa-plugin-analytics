@@ -105,6 +105,40 @@ Installing on a customer site is a single tag:
 
 ---
 
+## Identifying visitors
+
+Visitors are anonymous by default, tracked per device. When the site knows who
+someone is, it says so once — and everything that device already did becomes
+theirs.
+
+```js
+eesa.identify('cust_1042');   // your own id, opaque to us
+eesa.reset();                 // on logout
+eesa('purchase', { order_id: 'ord_88121', value: 42.50 });
+```
+
+Call `identify()` in **two** places: when your login succeeds, and on any page
+load where the visitor is already signed in. Skip the second and a returning
+customer stays anonymous until the next time they happen to log in.
+
+The pre-login history is claimed **without rewriting anything**. Events keep the
+`user_id` they were captured with — usually empty — and the link lands in
+`identities`, which the read path resolves through. `events` is a hypertable
+behind a continuous aggregate: updating a visitor's rows on every sign-in would
+spray writes across chunks and leave already-materialised hourly buckets
+disagreeing with the raw rows beneath them. One mapping row covers that
+visitor's whole history instead, reaches further back than any backfill window
+would, and is undone by deleting it.
+
+`reset()` also rotates the device id, so the next person on a shared computer
+starts as a new anonymous visitor rather than as whoever signed in last.
+
+Use a stable internal id. Not an email — it would sit in the visitor's own
+browser storage and in this database for no benefit — and never a guest or
+temporary id, since an id that changes turns one person into two.
+
+---
+
 ## Data model
 
 Schema lives in [`db/schema.sql`](db/schema.sql) — apply it to the plugin's own
@@ -114,6 +148,7 @@ database before first boot.
 |---|---|
 | `sites` | Tracked sites, tracking keys, allowed origins |
 | `events` | The firehose. **TimescaleDB hypertable**, 7-day chunks on `ts` |
+| `identities` | Visitor→user links. What makes `identify()` reach backwards |
 | `funnels` | Tenant-defined funnel step definitions |
 | `goals` | Tenant-defined conversions |
 | `recordings` | Session-replay metadata (rrweb) |
