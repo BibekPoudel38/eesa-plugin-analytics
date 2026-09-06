@@ -75,6 +75,8 @@ const uniq = (evts: StoredEvent[], f: (e: StoredEvent) => string) =>
 type SessionAgg = {
   id: string;
   visitorId: string;
+  /** The SITE's own id for this person, from identify(). "" when anonymous. */
+  userId: string;
   device: StoredEvent["device"];
   browser: string;
   os: string;
@@ -101,6 +103,11 @@ function sessionize(events: StoredEvent[]): SessionAgg[] {
     out.push({
       id,
       visitorId: evts[0].visitorId,
+      // Identity arrives mid-session — a visitor browses, signs in, keeps
+      // going — and `load.ts` back-fills it onto the earlier events through
+      // the identities join. Taking the first non-empty value therefore names
+      // the WHOLE session, rather than only the part after they signed in.
+      userId: evts.find((e) => e.userId)?.userId ?? "",
       device: evts[0].device,
       browser: evts[0].browser,
       os: evts[0].os,
@@ -487,8 +494,12 @@ function toRow(s: SessionAgg, recs: Set<string>, now: number): SessionRow {
       : "Browsing";
   return {
     id: "s_" + s.id.slice(-5),
-    user: shortId(s.visitorId),
-    anon: true,
+    // Prefer the site's own id. It was collected, stored, resolved through the
+    // identities table and carried all the way here, and then this row threw it
+    // away and labelled every single visitor anonymous — so a signed-in Chups
+    // customer read as "u48q" and the whole point of identify() was invisible.
+    user: s.userId || shortId(s.visitorId),
+    anon: !s.userId,
     location: s.location,
     device: s.device,
     browser: s.browser,
