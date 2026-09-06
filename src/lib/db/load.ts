@@ -96,3 +96,89 @@ export async function loadEvents(
     };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Aggregates that must NOT read rows
+// ---------------------------------------------------------------------------
+//
+// `loadEvents` exists so the pure aggregators in `live/aggregate.ts` can keep
+// doing the maths in JS. That is a fair trade when the maths is genuinely
+// per-event. It is a terrible one for a headline count: the status strip needs
+// three integers and eight rows, and it was getting them by pulling every event
+// for the window — measured on production at 135,102 rows, ~50 MB and ~1.2 s,
+// on a page that also loads the same events twice more for its other panels.
+//
+// Postgres answers the same three integers in ~130 ms without sending a single
+// event over the wire. The rule this encodes: if a screen needs a NUMBER, ask
+// the database for the number.
+
+export interface LiveCounts {
+  events: number;
+  visitors: number;
+  sessions: number;
+}
+
+/** Headline counts for a window, computed in the database. */
+export async function loadCounts(
+  tenantId: string,
+  siteId: string,
+  sinceMs: number,
+): Promise<LiveCounts> {
+  const rows = await query<{ events: string; visitors: string; sessions: string }>(
+    `select count(*)                    as events,
+            count(distinct visitor_id)  as visitors,
+            count(distinct session_id)  as sessions
+       from events
+      where tenant_id = $1 and site_id = $2 and ts >= $3`,
+    [tenantId, siteId, new Date(sinceMs)],
+  );
+  const r = rows[0];
+  // count() comes back as a bigint, which node-postgres hands over as a STRING
+  // to avoid a silent precision loss past 2^53. Number() here is safe (an event
+  // count cannot reach that) but the parse must be explicit — left as-is these
+  // land in the UI as "135102" concatenated rather than summed.
+  return {
+    events: Number(r?.events ?? 0),
+    visitors: Number(r?.visitors ?? 0),
+    sessions: Number(r?.sessions ?? 0),
+  };
+}
+
+export interface RecentEvent {
+  type: string;
+  path: string;
+  label: string;
+  ts: number;
+}
+
+/**
+ * The newest events in a window, newest first.
+ *
+ * Ordered by `ts` — the server receive time — because that is what the previous
+ * implementation ordered by, and it is the only clock this service controls; a
+ * device with a wrong system time cannot reorder the strip.
+ */
+export async function loadRecentEvents(
+  tenantId: string,
+  siteId: string,
+  sinceMs: number,
+  limit = 8,
+): Promise<RecentEvent[]> {
+  const rows = await query<{ ts: Date; type: string; path: string; name: string | null }>(
+    `select ts, type, path, name
+       from events
+      where tenant_id = $1 and site_id = $2 and ts >= $3
+      order by ts desc
+      limit $4`,
+    [tenantId, siteId, new Date(sinceMs), limit],
+  );
+  return rows.map((r) => ({
+    type: r.type,
+    path: r.path,
+    // `title` is on RawEvent but has no column and is never selected, so the
+    // old expression `e.title ?? e.path` always resolved to the path. Kept
+    // literal rather than "improved", so this returns what the strip showed.
+    label: r.type === "custom" ? (r.name ?? "custom") : r.path,
+    ts: r.ts.getTime(),
+  }));
+}

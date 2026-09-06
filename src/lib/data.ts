@@ -1,8 +1,9 @@
 import "server-only";
+import { cache } from "react";
 import * as live from "@/lib/live/aggregate";
 import { rangeDays } from "@/lib/ranges";
 import type { StoredEvent } from "@/lib/live/types";
-import { loadEvents } from "@/lib/db/load";
+import { loadCounts, loadEvents, loadRecentEvents } from "@/lib/db/load";
 import { listSites, getSite } from "@/lib/db/sites";
 import { listGoals } from "@/lib/db/goals";
 import { recordingIdsFor } from "@/lib/live/recordings";
@@ -23,7 +24,22 @@ const DAY = 86_400_000;
  * funnel definitions land (P4); the event table goes live.
  */
 
-async function windowed(
+/**
+ * One window's events, loaded AT MOST ONCE per request.
+ *
+ * `cache()` memoises on the argument list for the lifetime of a single server
+ * request. That matters because a page is not one getter: the overview awaits
+ * `getOverview`, `getLiveStatus` and `getGoalCards` in sequence, and each one
+ * used to run its own full load — the same ~135,000 rows and ~50 MB fetched,
+ * parsed and thrown away three times over, sequentially, before the page could
+ * render.
+ *
+ * Deliberately keyed on the ARGUMENTS rather than a time bucket: `Date.now()`
+ * is read inside, so two getters in one request share a load, and the next
+ * request still gets fresh data. Nothing is cached ACROSS requests — that would
+ * be a correctness change to a live dashboard, not a performance one.
+ */
+const windowed = cache(async function windowed(
   tenantId: string,
   siteId: string,
   range?: string,
@@ -32,7 +48,7 @@ async function windowed(
   const since = now - rangeDays(range) * DAY;
   const evs = await loadEvents(tenantId, siteId, since);
   return { evs, span: [since, now] };
-}
+});
 
 export async function getLiveStatus(tenantId: string, siteId?: string) {
   const sites = await listSites(tenantId);
@@ -40,21 +56,21 @@ export async function getLiveStatus(tenantId: string, siteId?: string) {
     return { live: false, eventCount: 0, visitors: 0, sessions: 0, sites, recent: [] };
   }
   // Last 30 days is enough to say "is this site live" + headline counts.
-  const { evs } = await windowed(tenantId, siteId, "30d");
-  const recent = evs
-    .slice(-8)
-    .reverse()
-    .map((e) => ({
-      type: e.type,
-      path: e.path,
-      label: e.type === "custom" ? (e.name ?? "custom") : (e.title ?? e.path),
-      ts: e.recvTs,
-    }));
+  //
+  // Asked of the database rather than counted in JS. This used to load every
+  // event in the window to produce three integers and eight rows — the single
+  // most expensive thing on the page and the least justified, since none of the
+  // per-event detail it fetched was ever looked at.
+  const since = Date.now() - 30 * DAY;
+  const [counts, recent] = await Promise.all([
+    loadCounts(tenantId, siteId, since),
+    loadRecentEvents(tenantId, siteId, since, 8),
+  ]);
   return {
-    live: evs.length > 0,
-    eventCount: evs.length,
-    visitors: new Set(evs.map((e) => e.visitorId)).size,
-    sessions: new Set(evs.map((e) => e.sessionId)).size,
+    live: counts.events > 0,
+    eventCount: counts.events,
+    visitors: counts.visitors,
+    sessions: counts.sessions,
     sites,
     recent,
   };
