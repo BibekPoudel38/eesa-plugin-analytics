@@ -195,3 +195,72 @@ export async function loadAppBreakdown(
     value: Number(r.v ?? 0),
   }));
 }
+
+export interface AppEventProp {
+  key: string;
+  /** How many of this event's rows actually carried the property. */
+  count: number;
+  /** The most common value, for reading what the field means at a glance. */
+  sample: string;
+}
+
+export interface AppEventKind {
+  name: string;
+  count: number;
+  lastSeen: string;
+  props: AppEventProp[];
+}
+
+/**
+ * What the app actually sends, as opposed to what it is documented to send.
+ *
+ * Every other panel here interprets the app's events. This one just reports
+ * them: each custom event, how many arrived, and which properties rode along
+ * with how many of them. It is the only place that answers "is the client
+ * sending what we think it is" without opening a database.
+ *
+ * The coverage number is the point. `payment_kind` on 106 of 106
+ * `payment_started` events is a field that is always there; the same field on
+ * 12 of 106 is a client that stopped setting it, and no aggregate built on top
+ * of that field would ever say so.
+ */
+export async function loadAppEventKinds(
+  tenantId: string, siteId: string, sinceMs: number,
+): Promise<AppEventKind[]> {
+  const rows = await query<Record<string, string | Date | null | AppEventProp[]>>(
+    `with ev as (
+        select name, ts,
+               -- A client is free to send a scalar or an array here; expanding
+               -- one as an object would abort the whole query.
+               case when jsonb_typeof(props) = 'object' then props
+                    else '{}'::jsonb end as props
+          from events
+         where ${SCOPE} and coalesce(name, '') <> ''
+     ),
+     counts as (
+        select name, count(*) as n, max(ts) as last_seen from ev group by 1
+     ),
+     keys as (
+        select e.name, kv.key,
+               count(*) as n,
+               mode() within group (order by left(kv.value, 40)) as sample
+          from ev e, lateral jsonb_each_text(e.props) kv
+         group by 1, 2
+     )
+     select c.name, c.n, c.last_seen,
+            coalesce(
+              json_agg(json_build_object('key', k.key, 'count', k.n, 'sample', k.sample)
+                       order by k.n desc, k.key)
+              filter (where k.key is not null), '[]') as props
+       from counts c left join keys k on k.name = c.name
+      group by c.name, c.n, c.last_seen
+      order by c.n desc`,
+    [tenantId, siteId, new Date(sinceMs)],
+  );
+  return rows.map((r) => ({
+    name: String(r.name ?? ""),
+    count: Number(r.n ?? 0),
+    lastSeen: r.last_seen ? new Date(r.last_seen as Date).toISOString() : "",
+    props: (r.props as AppEventProp[] | null) ?? [],
+  }));
+}

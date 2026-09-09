@@ -11,6 +11,7 @@ import { Donut } from "@/components/charts/donut";
 import { DataBadge } from "@/components/app/data-badge";
 import { NoSite } from "@/components/app/no-site";
 import { getAppData } from "@/lib/data";
+import type { AppEventKind } from "@/lib/db/app";
 import { compactNumber, duration, relativeTime } from "@/lib/format";
 import { axisLabels } from "@/lib/ranges";
 import { currentScope } from "@/lib/eesa/scope";
@@ -33,6 +34,8 @@ export const dynamic = "force-dynamic";
 //: The dashboard's own accents, reused so the app page does not introduce a
 //: fourth palette nobody chose.
 const PLATFORM_COLOR = ["var(--ember)", "var(--teal)", "var(--violet)", "var(--muted-foreground)"];
+
+const TH = "px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
 
 function money(n: number): string {
   return n.toLocaleString("en-US", {
@@ -80,6 +83,87 @@ function Split({
       ) : (
         empty && <p className="text-sm text-muted-foreground">{empty}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * What the app sends, reported rather than interpreted.
+ *
+ * The coverage figure beside each property is the reason this exists: a field
+ * present on 106 of 106 events is one you can build on, and the same field on
+ * 12 of 106 is a client that quietly stopped setting it. Every other panel on
+ * this page would keep averaging the 12 without ever saying so.
+ */
+function EventContract({ kinds }: { kinds: AppEventKind[] }) {
+  if (!kinds.length) {
+    return (
+      <p className="p-5 text-sm text-muted-foreground">
+        The app has sent no named events in this window. It reports these with
+        analytics.click(&quot;add_to_cart&quot;, { "{ ... }" }).
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[680px] text-sm">
+        <thead className="border-b bg-muted/40">
+          <tr>
+            <th className={TH}>Event</th>
+            <th className={`${TH} text-right`}>Count</th>
+            <th className={TH}>Properties it carries</th>
+            <th className={`${TH} text-right`}>Last seen</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {kinds.map((k) => (
+            <tr key={k.name} className="align-top hover:bg-muted/30">
+              <td className="px-3 py-3">
+                <code className="rounded bg-muted px-1.5 py-0.5 text-[13px] font-medium text-foreground">
+                  {k.name}
+                </code>
+              </td>
+              <td className="px-3 py-3 text-right tabular text-foreground">
+                {compactNumber(k.count)}
+              </td>
+              <td className="px-3 py-3">
+                {k.props.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {k.props.map((p) => {
+                      const partial = p.count < k.count;
+                      return (
+                        <span
+                          key={p.key}
+                          title={`${p.count} of ${k.count} · e.g. ${p.sample}`}
+                          className={`inline-flex items-baseline gap-1.5 rounded-md border px-1.5 py-0.5 text-xs ${
+                            partial
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                              : "bg-muted/60 text-muted-foreground"
+                          }`}
+                        >
+                          <code className="text-foreground">{p.key}</code>
+                          {partial && (
+                            <span className="tabular">
+                              {Math.round((p.count / k.count) * 100)}%
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    no properties
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-3 text-right text-xs text-muted-foreground">
+                {ago(k.lastSeen ? Date.parse(k.lastSeen) : null)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -353,6 +437,19 @@ export default async function MobileAppPage({
               </div>
             </Panel>
           </div>
+
+          <Panel className="overflow-hidden">
+            <PanelHead
+              title="What the app sends"
+              sub="Every named event and the properties attached to it — the integration's actual contract, read back from what arrived"
+            />
+            <EventContract kinds={d.kinds} />
+            <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
+              Screens arrive separately as pageviews — {compactNumber(d.app.events - d.kinds.reduce((a, k) => a + k.count, 0))} of them
+              in this window — and are listed under Screens above. An amber
+              property is one that only some of that event&apos;s rows carried.
+            </p>
+          </Panel>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             <Panel className="lg:col-span-5">

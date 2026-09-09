@@ -208,7 +208,8 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
   // until now: every add_to_cart, payment_started, place_order and
   // apply_coupon arrives with its properties attached. All aggregates, so the
   // extra detail costs one round trip rather than another 20,000 rows.
-  const [app, totals, commerce, items, service, payment, coupons] = await Promise.all([
+  const [app, totals, commerce, items, service, payment, coupons, kinds] =
+    await Promise.all([
     loadEvents(tenantId, siteId, since, 200_000, "app"),
     loadSurfaceTotals(tenantId, siteId, since),
     appdb.loadAppCommerce(tenantId, siteId, since),
@@ -218,6 +219,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     appdb.loadAppBreakdown(tenantId, siteId, since, "code", {
       event: "apply_coupon", sum: "discount_amount", limit: 8,
     }),
+    appdb.loadAppEventKinds(tenantId, siteId, since),
   ]);
   const span: [number, number] = [since, now];
 
@@ -266,6 +268,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     service,
     payment,
     coupons,
+    kinds,
   };
 }
 
