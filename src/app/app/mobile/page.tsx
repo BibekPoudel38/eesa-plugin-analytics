@@ -202,7 +202,9 @@ function Clock({ clock }: { clock: AppClock }) {
         {peakDay?.label && (
           <> · best day <strong className="text-foreground">{peakDay.label}</strong></>
         )}{" "}
-        <span className="text-xs">({clock.timezone.replace(/_/g, " ")})</span>
+        <span className="text-xs">
+          ({clock.timezone.split("/").pop()?.replace(/_/g, " ") ?? clock.timezone} time)
+        </span>
       </p>
 
       <div className="flex h-32 items-end gap-[3px]">
