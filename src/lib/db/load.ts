@@ -47,7 +47,21 @@ export async function loadEvents(
   siteId: string,
   sinceMs: number,
   limit = 200_000,
+  /** Restrict to one surface. Filtering HERE and not in JS is the difference
+   *  between shipping 152,000 rows to render a page about 21,000 of them and
+   *  shipping 21,000 — the same lesson the overview learned when it loaded
+   *  every event three times to produce nine integers. */
+  surface?: "app" | "web",
 ): Promise<StoredEvent[]> {
+  const surfaceSql =
+    surface === "app"
+      ? "and e.display_mode = 'app'"
+      : surface === "web"
+        // Not "everything that is not app": events captured before the tracker
+        // reported a surface are old-tracker traffic, and counting them as web
+        // would overstate the website at the app's expense.
+        ? "and e.display_mode <> '' and e.display_mode <> 'app'"
+        : "";
   // Identity is resolved HERE, not stored back onto the row. `e.user_id` is set
   // only on events captured after the visitor signed in; the join supplies the
   // same person for everything they did before that, which is what makes
@@ -68,6 +82,7 @@ export async function loadEvents(
              and i.site_id    = e.site_id
              and i.visitor_id = e.visitor_id
       where e.tenant_id = $1 and e.site_id = $2 and e.ts >= $3
+        ${surfaceSql}
       order by e.ts asc
       limit $4`,
     [tenantId, siteId, new Date(sinceMs), limit],
@@ -283,4 +298,60 @@ export async function loadSurfaces(
     lastSeen: r.last_seen ? new Date(r.last_seen).toISOString() : null,
     priorEvents: Number(r.prior_events ?? 0),
   }));
+}
+
+
+/** Headline counts per surface for one site, asked of the database.
+ *
+ *  The comparison strip needs four integers for each of two surfaces. Loading
+ *  both sides' events to count them in JS costs seven times the rows for
+ *  numbers Postgres can produce directly — and the website's half is never
+ *  looked at again on that page.
+ */
+export interface SurfaceTotals {
+  events: number;
+  sessions: number;
+  visitors: number;
+  /** Visitors who have identified — people, not events. */
+  identified: number;
+  lastSeen: string | null;
+}
+
+export async function loadSurfaceTotals(
+  tenantId: string,
+  siteId: string,
+  sinceMs: number,
+): Promise<Record<"app" | "web", SurfaceTotals>> {
+  const rows = await query<{
+    surface: string; events: string; sessions: string;
+    visitors: string; identified: string; last_seen: Date | null;
+  }>(
+    `select case when display_mode = 'app' then 'app' else 'web' end as surface,
+            count(*)                                                as events,
+            count(distinct session_id)                              as sessions,
+            count(distinct visitor_id)                              as visitors,
+            count(distinct visitor_id) filter (where user_id <> '') as identified,
+            max(ts)                                                 as last_seen
+       from events
+      where tenant_id = $1 and site_id = $2 and ts >= $3
+        -- Unlabelled events belong to neither side. See loadEvents.
+        and display_mode <> ''
+      group by 1`,
+    [tenantId, siteId, new Date(sinceMs)],
+  );
+  const empty = (): SurfaceTotals => ({
+    events: 0, sessions: 0, visitors: 0, identified: 0, lastSeen: null,
+  });
+  const out: Record<"app" | "web", SurfaceTotals> = { app: empty(), web: empty() };
+  for (const r of rows) {
+    const key = r.surface === "app" ? "app" : "web";
+    out[key] = {
+      events: Number(r.events ?? 0),
+      sessions: Number(r.sessions ?? 0),
+      visitors: Number(r.visitors ?? 0),
+      identified: Number(r.identified ?? 0),
+      lastSeen: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+    };
+  }
+  return out;
 }

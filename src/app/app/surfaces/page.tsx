@@ -10,7 +10,7 @@ import { Donut } from "@/components/charts/donut";
 import { DataBadge } from "@/components/app/data-badge";
 import { NoSite } from "@/components/app/no-site";
 import { getAppData } from "@/lib/data";
-import { compactNumber, duration } from "@/lib/format";
+import { compactNumber, duration, relativeTime } from "@/lib/format";
 import { axisLabels } from "@/lib/ranges";
 import { currentScope } from "@/lib/eesa/scope";
 
@@ -158,10 +158,23 @@ export default async function AppSurfacePage({
 
       {d.hasApp && (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            {d.kpis.map((k) => (
-              <KpiCard key={k.key} kpi={k} />
-            ))}
+          {/* Two of the shared KPIs do not survive the trip to an app, and a
+              card that cannot be true is worse than one that is missing.
+
+              "Conversions" counts sessions containing any custom event — on a
+              website that is a checkout, but every analytics.click() the app
+              reports is a custom event, so it would read as a conversion rate
+              when it means "somebody tapped something". The Taps panel below
+              says that honestly instead.
+
+              "Rage clicks" is never emitted by the mobile client at all, so it
+              is a card permanently pinned to zero. */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {d.kpis
+              .filter((k) => k.key !== "conversion" && k.key !== "rage")
+              .map((k) => (
+                <KpiCard key={k.key} kpi={k} />
+              ))}
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -260,6 +273,60 @@ export default async function AppSurfacePage({
                   <p className="text-sm text-muted-foreground">
                     No taps recorded yet. The app reports these with
                     analytics.click(&quot;add_to_cart&quot;).
+                  </p>
+                )}
+              </div>
+            </Panel>
+          </div>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            <Panel className="lg:col-span-5">
+              <PanelHead
+                title="Where the app is used"
+                sub="People, by the place the request came from"
+              />
+              <div className="p-5">
+                {d.locations.length ? (
+                  <BarList
+                    items={d.locations.map((l) => ({
+                      label: l.name,
+                      value: l.value,
+                      color: l.color,
+                    }))}
+                    valueFormatter={compactNumber}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No location reported yet.
+                  </p>
+                )}
+              </div>
+            </Panel>
+
+            <Panel className="lg:col-span-7">
+              <PanelHead
+                title="Latest in the app"
+                sub="The most recent screens and taps, newest first"
+              />
+              <div className="divide-y">
+                {d.activity.length ? (
+                  d.activity.slice(0, 10).map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm"
+                    >
+                      <span className="min-w-0 truncate">
+                        <span className="font-medium text-foreground">{a.user}</span>{" "}
+                        <span className="text-muted-foreground">{a.action}</span>{" "}
+                        <span className="text-foreground">{a.target}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {relativeTime(a.minutesAgo)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="p-5 text-sm text-muted-foreground">
+                    Nothing recorded in this window.
                   </p>
                 )}
               </div>

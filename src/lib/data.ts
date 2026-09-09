@@ -3,7 +3,13 @@ import { cache } from "react";
 import * as live from "@/lib/live/aggregate";
 import { rangeDays } from "@/lib/ranges";
 import type { StoredEvent } from "@/lib/live/types";
-import { loadCounts, loadEvents, loadRecentEvents, loadSurfaces } from "@/lib/db/load";
+import {
+  loadCounts,
+  loadEvents,
+  loadRecentEvents,
+  loadSurfaces,
+  loadSurfaceTotals,
+} from "@/lib/db/load";
 import { listSites, getSite } from "@/lib/db/sites";
 import { listGoals } from "@/lib/db/goals";
 import { recordingIdsFor } from "@/lib/live/recordings";
@@ -139,29 +145,22 @@ export async function getSurfaces(tenantId: string, days = 7) {
  */
 export async function getAppData(tenantId: string, siteId: string, range?: string) {
   const now = Date.now();
-  const { evs, span } = await windowed(tenantId, siteId, range);
+  const since = now - rangeDays(range) * DAY;
 
-  const app = evs.filter((e) => e.displayMode === "app");
-  // Everything that is not the app and not unlabelled. Events captured before
-  // the tracker reported a surface are excluded from BOTH sides rather than
-  // quietly counted as web — they are old-tracker traffic and attributing them
-  // would overstate the website at the app's expense.
-  const web = evs.filter((e) => e.displayMode && e.displayMode !== "app");
+  // Only the app's events are loaded. This page used to pull every event in
+  // the window — 152,000 of them to render a page about 21,000 — and filter in
+  // JavaScript, which is why it took so long to open. The website's half is
+  // now four integers from the database rather than 75,000 rows nothing on
+  // this page ever reads again.
+  const [app, totals] = await Promise.all([
+    loadEvents(tenantId, siteId, since, 200_000, "app"),
+    loadSurfaceTotals(tenantId, siteId, since),
+  ]);
+  const span: [number, number] = [since, now];
 
-  const totals = (list: typeof evs) => ({
-    events: list.length,
-    visitors: new Set(list.map((e) => e.visitorId)).size,
-    sessions: new Set(list.map((e) => e.sessionId)).size,
-    // Visitors who have identified, over visitors. Counting distinct USER ids
-    // against distinct VISITOR ids — the first version — divided two different
-    // populations by each other and produced a percentage of nothing: the same
-    // person on a phone and a laptop is two visitors and one user id.
-    identified: new Set(list.filter((e) => e.userId).map((e) => e.visitorId)).size,
-  });
-
-  // iOS vs Android, from the os the client reports. Counted over VISITORS
-  // rather than events: one person opening the app forty times is one phone,
-  // and counting events would make the chattiest platform look the biggest.
+  // iOS vs Android, from the os the client reports. Counted over PEOPLE rather
+  // than events: one phone opened forty times is one phone, and counting
+  // events would make the chattiest platform look the biggest.
   const byOs = new Map<string, Set<string>>();
   for (const e of app) {
     const os = e.os || "Unknown";
@@ -174,11 +173,11 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
 
   return {
     span,
-    app: totals(app),
-    web: totals(web),
-    hasApp: app.length > 0,
-    hasWeb: web.length > 0,
-    lastSeen: app.length ? Math.max(...app.map((e) => e.recvTs)) : null,
+    app: totals.app,
+    web: totals.web,
+    hasApp: totals.app.events > 0,
+    hasWeb: totals.web.events > 0,
+    lastSeen: totals.app.lastSeen ? Date.parse(totals.app.lastSeen) : null,
     kpis: live.liveKpis(now, app),
     trend: live.liveTrend(app, span),
     // analytics.screen(route.name) arrives as a pageview whose path is the
@@ -186,6 +185,10 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     screens: live.liveTopPages(app),
     // analytics.click(name) arrives as a custom event.
     taps: live.liveEvents(app),
+    // Where the app is used, and what it has been doing lately. Both come free
+    // from events already in memory.
+    locations: live.liveLocations(app),
+    activity: live.liveActivity(now, app),
     platforms,
   };
 }
