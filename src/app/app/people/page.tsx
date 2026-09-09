@@ -71,10 +71,10 @@ export default async function AppPeoplePage({
       {!d.rows.length ? (
         <Panel>
           <p className="p-6 text-sm text-muted-foreground">
-            Nobody identified in the app in this window. The app names a person
-            by calling <code>analytics.identify()</code> after sign-in; until it
-            does, their activity is still counted — it just belongs to a device
-            rather than to somebody.
+            Nobody signed in on the app in this window. Anyone browsing
+            without signing in is still counted everywhere else on this
+            dashboard — their visits just belong to a phone rather than to a
+            person we can name.
           </p>
         </Panel>
       ) : (
@@ -86,9 +86,10 @@ export default async function AppPeoplePage({
             <div className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
               <p>
-                <strong>Names are unavailable right now.</strong> Eesa&apos;s
-                customer directory did not answer, so everyone below is shown by
-                the id the app reports. The activity figures are unaffected.
+                <strong>Names are unavailable right now.</strong> Your
+                customer records did not answer, so everyone below is shown by
+                their customer number instead. Everything else on this page —
+                visits, orders, spend — is unaffected.
               </p>
             </div>
           )}
@@ -125,7 +126,7 @@ export default async function AppPeoplePage({
           <Panel className="overflow-hidden">
             <PanelHead
               title="Everyone in the app"
-              sub="Search by name, phone, email or dish. Contact details come from your own customer records, by id."
+              sub="Search by name, phone, email or dish. Contact details come from your own customer records."
             />
             <PeopleTable rows={d.rows} />
           </Panel>
@@ -134,7 +135,7 @@ export default async function AppPeoplePage({
             <Panel className="lg:col-span-5">
               <PanelHead
                 title="Where they are"
-                sub="From your customer records — the app's own events carry no location"
+                sub="From your customer records — the app itself does not report where people are"
               />
               <div className="p-5">
                 {d.cities.length ? (
@@ -164,15 +165,15 @@ export default async function AppPeoplePage({
               <div className="flex gap-3 p-5 text-sm text-muted-foreground">
                 <Info className="mt-0.5 size-4 shrink-0" />
                 <p>
-                  The app sends only a customer id — never a name or a phone
-                  number. It couldn&apos;t: the endpoint that receives app
-                  events is public, so anything posted there could be posted by
-                  anyone. The details on this page are read from your own
-                  customer records at the moment the page loads, by the ids the
-                  app reported, and are never stored in analytics. Favourite
-                  dish and delivery-or-pickup come the other way — from the
-                  app&apos;s own <code>add_to_cart</code> and{" "}
-                  <code>place_order</code> events.
+                  The app never sends anyone&apos;s name or phone number to
+                  analytics — only a customer number. That is deliberate:
+                  anything the app can send, anyone else could send too, so
+                  personal details are kept out of it entirely. Names, phones
+                  and cities on this page are read from your own customer
+                  records at the moment you open it, matched on those customer
+                  numbers, and are never stored here. Favourite dish and
+                  delivery-or-pickup come from what people actually did in the
+                  app.
                 </p>
               </div>
             </Panel>

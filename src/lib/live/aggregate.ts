@@ -211,7 +211,7 @@ export function liveKpis(now = Date.now(), evs?: StoredEvent[]): Kpi[] {
     },
     {
       key: "rage",
-      label: "Rage clicks",
+      label: "Frustrated clicks",
       value: rage,
       format: "number",
       delta: splitDelta(events, span, (e) => e.filter((x) => x.type === "rageclick").length),

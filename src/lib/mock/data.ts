@@ -102,7 +102,7 @@ export const kpis: Kpi[] = [
   },
   {
     key: "rage",
-    label: "Rage clicks",
+    label: "Frustrated clicks",
     value: 214,
     format: "number",
     delta: -18.0,

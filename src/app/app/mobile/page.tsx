@@ -12,6 +12,7 @@ import { DataBadge } from "@/components/app/data-badge";
 import { NoSite } from "@/components/app/no-site";
 import { getAppData } from "@/lib/data";
 import type { AppEventKind } from "@/lib/db/app";
+import { eventLabel, fieldLabel, sentence } from "@/lib/vocab";
 import { compactNumber, duration, relativeTime } from "@/lib/format";
 import { axisLabels } from "@/lib/ranges";
 import { currentScope } from "@/lib/eesa/scope";
@@ -72,7 +73,7 @@ function Split({
         <ul className="space-y-1.5">
           {rows.map((r) => (
             <li key={r.label} className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate text-foreground">{r.label.replace(/_/g, " ")}</span>
+              <span className="truncate text-foreground">{sentence(r.label)}</span>
               <span className="shrink-0 tabular text-muted-foreground">
                 {suffix?.(r) || `${Math.round((r.count / (total || 1)) * 100)}%`}
                 <span className="ml-2 text-xs">{compactNumber(r.count)}</span>
@@ -99,8 +100,8 @@ function EventContract({ kinds }: { kinds: AppEventKind[] }) {
   if (!kinds.length) {
     return (
       <p className="p-5 text-sm text-muted-foreground">
-        The app has sent no named events in this window. It reports these with
-        analytics.click(&quot;add_to_cart&quot;, { "{ ... }" }).
+        The app has recorded no actions in this window — no baskets, no
+        checkouts, no orders.
       </p>
     );
   }
@@ -109,19 +110,20 @@ function EventContract({ kinds }: { kinds: AppEventKind[] }) {
       <table className="w-full min-w-[680px] text-sm">
         <thead className="border-b bg-muted/40">
           <tr>
-            <th className={TH}>Event</th>
-            <th className={`${TH} text-right`}>Count</th>
-            <th className={TH}>Properties it carries</th>
-            <th className={`${TH} text-right`}>Last seen</th>
+            <th className={TH}>What happened</th>
+            <th className={`${TH} text-right`}>Times</th>
+            <th className={TH}>Detail recorded with it</th>
+            <th className={`${TH} text-right`}>Last one</th>
           </tr>
         </thead>
         <tbody className="divide-y">
           {kinds.map((k) => (
             <tr key={k.name} className="align-top hover:bg-muted/30">
               <td className="px-3 py-3">
-                <code className="rounded bg-muted px-1.5 py-0.5 text-[13px] font-medium text-foreground">
-                  {k.name}
-                </code>
+                <div className="font-medium text-foreground">{eventLabel(k.name)}</div>
+                {/* Kept, but demoted. Whoever is checking the integration
+                    still needs it; nobody reading the numbers does. */}
+                <div className="font-mono text-[11px] text-muted-foreground">{k.name}</div>
               </td>
               <td className="px-3 py-3 text-right tabular text-foreground">
                 {compactNumber(k.count)}
@@ -134,14 +136,14 @@ function EventContract({ kinds }: { kinds: AppEventKind[] }) {
                       return (
                         <span
                           key={p.key}
-                          title={`${p.count} of ${k.count} · e.g. ${p.sample}`}
+                          title={`${p.key} — on ${p.count} of ${k.count} · e.g. ${p.sample}`}
                           className={`inline-flex items-baseline gap-1.5 rounded-md border px-1.5 py-0.5 text-xs ${
                             partial
                               ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
                               : "bg-muted/60 text-muted-foreground"
                           }`}
                         >
-                          <code className="text-foreground">{p.key}</code>
+                          <span className="text-foreground">{fieldLabel(p.key)}</span>
                           {partial && (
                             <span className="tabular">
                               {Math.round((p.count / k.count) * 100)}%
@@ -270,7 +272,7 @@ export default async function MobileAppPage({
             <Panel className="lg:col-span-4">
               <PanelHead
                 title="Platform"
-                sub="People, not events — one phone opened forty times is one phone"
+                sub="People, not visits — one phone opened forty times is one person"
               />
               <div className="p-5">
                 {d.platforms.length ? (
@@ -305,7 +307,7 @@ export default async function MobileAppPage({
             <Panel>
               <PanelHead
                 title="Screens"
-                sub="Where people go — from analytics.screen()"
+                sub="The screens people open, busiest first"
               />
               <div className="p-5">
                 {d.screens.length ? (
@@ -319,8 +321,7 @@ export default async function MobileAppPage({
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No screens recorded. The app reports these with
-                    analytics.screen(route.name).
+                    No screens opened in this window.
                   </p>
                 )}
               </div>
@@ -328,8 +329,8 @@ export default async function MobileAppPage({
 
             <Panel>
               <PanelHead
-                title="Taps"
-                sub="What people do — from analytics.click()"
+                title="Actions"
+                sub="What people tap, and how it has moved"
               />
               <div className="p-5">
                 {d.taps.length ? (
@@ -353,8 +354,7 @@ export default async function MobileAppPage({
                   </ul>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No taps recorded yet. The app reports these with
-                    analytics.click(&quot;add_to_cart&quot;).
+                    Nothing tapped in this window.
                   </p>
                 )}
               </div>
@@ -364,7 +364,7 @@ export default async function MobileAppPage({
             <Panel>
               <PanelHead
                 title="Basket to order"
-                sub="Sessions that reached each step, from the app's own events"
+                sub="How many visits got to each step"
               />
               <div className="space-y-3 p-5">
                 {[
@@ -402,7 +402,7 @@ export default async function MobileAppPage({
             </Panel>
 
             <Panel>
-              <PanelHead title="Menu" sub="What goes in the basket, from add_to_cart" />
+              <PanelHead title="Menu" sub="What goes in the basket, most often first" />
               <div className="p-5">
                 {d.items.length ? (
                   <BarList
@@ -422,7 +422,7 @@ export default async function MobileAppPage({
             </Panel>
 
             <Panel>
-              <PanelHead title="How they order" sub="Service and payment, as the app reports them" />
+              <PanelHead title="How they order" sub="Delivery or pickup, and how they paid" />
               <div className="space-y-4 p-5">
                 <Split title="Delivery or pickup" rows={d.service} empty="No service type reported." />
                 <Split title="Paid with" rows={d.payment} empty="No payment method reported." />
@@ -440,14 +440,16 @@ export default async function MobileAppPage({
 
           <Panel className="overflow-hidden">
             <PanelHead
-              title="What the app sends"
-              sub="Every named event and the properties attached to it — the integration's actual contract, read back from what arrived"
+              title="What the app records"
+              sub="Every action the app reports back, how often it happened, and the detail that comes with it"
             />
             <EventContract kinds={d.kinds} />
             <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
-              Screens arrive separately as pageviews — {compactNumber(d.app.events - d.kinds.reduce((a, k) => a + k.count, 0))} of them
-              in this window — and are listed under Screens above. An amber
-              property is one that only some of that event&apos;s rows carried.
+              Screens opened are counted separately —{" "}
+              {compactNumber(d.app.events - d.kinds.reduce((a, k) => a + k.count, 0))} of
+              them in this window, listed under Screens above. A detail marked
+              amber only arrived with some of those actions, not all of them,
+              which usually means the app stopped filling it in.
             </p>
           </Panel>
 
@@ -455,19 +457,17 @@ export default async function MobileAppPage({
             <Panel className="lg:col-span-5">
               <PanelHead
                 title="Where the app is used"
-                sub="The app's events carry no location — see People"
+                sub="The app does not report this — see People"
               />
               <div className="flex gap-3 p-5 text-sm text-muted-foreground">
                 <MapPin className="mt-0.5 size-4 shrink-0" />
                 <p>
-                  Location on this dashboard is enriched from the request the
-                  browser makes, and the mobile client does not make one that
-                  carries it — so every app event is placed &quot;Unknown&quot;
-                  no matter where it came from. The{" "}
+                  The app does not report where anyone is, so this could only
+                  ever say &quot;Unknown&quot; — for everybody, everywhere. The{" "}
                   <Link href="/app/people" className="font-medium text-foreground underline underline-offset-2">
                     People
                   </Link>{" "}
-                  page shows where signed-in customers are instead, read from
+                  page shows where your signed-in customers live instead, from
                   your own customer records.
                 </p>
               </div>

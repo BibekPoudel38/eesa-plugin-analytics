@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Menu, Search } from "lucide-react";
+import { Loader2, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navItems, setupItems, type NavItem } from "./nav";
 import { Wordmark } from "@/components/brand/contour-mark";
@@ -11,9 +11,28 @@ import { SidebarCapture } from "@/components/app/sidebar-capture";
 import { SiteSwitcher } from "@/components/app/site-switcher";
 import type { Site } from "@/lib/db/sites";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AutoRefresh } from "@/components/app/auto-refresh";
 import { RangeSelect } from "@/components/app/range-filter";
+
+/**
+ * A spinner on the item you just clicked.
+ *
+ * These pages are server-rendered on every request and several take a second
+ * or two. Nothing moved in that gap: the old page stayed put, the click looked
+ * ignored, and the honest response was to click again. `useLinkStatus` is
+ * pending only for the link actually being navigated to, so the spinner
+ * appears exactly where the eye already is.
+ */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return (
+    <Loader2
+      className="ml-auto size-3.5 animate-spin text-muted-foreground"
+      aria-label="Loading"
+    />
+  );
+}
 
 function isActive(pathname: string, href: string) {
   // Overview is exactly /app; the rest match by prefix.
@@ -63,6 +82,7 @@ function NavGroup({
                   strokeWidth={2}
                 />
                 {item.label}
+                <NavPending />
               </Link>
             </li>
           );
@@ -128,23 +148,14 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         <Menu className="size-5" />
       </button>
 
+      {/* Two things were removed from here. The avatar read "SK" — a literal,
+          not anyone's initials, with no menu behind it. And the search box had
+          no handler anywhere in the codebase: it accepted typing and did
+          nothing, which is worse than clutter, because it looks like the way
+          to find something. */}
       <div className="ml-auto flex items-center gap-2">
         <AutoRefresh />
-        <div className="relative hidden md:block">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            placeholder="Search events, pages…"
-            className="h-9 w-52 rounded-lg border border-input bg-card/70 pl-8 pr-3 text-sm shadow-[var(--shadow-card)] outline-none transition-all placeholder:text-muted-foreground focus-visible:w-64 focus-visible:border-ring/50 focus-visible:ring-2 focus-visible:ring-ring/25"
-          />
-        </div>
-
         <RangeSelect />
-
-        <Avatar className="size-8 border border-border">
-          <AvatarFallback className="bg-teal/12 text-xs font-semibold text-teal">
-            SK
-          </AvatarFallback>
-        </Avatar>
       </div>
     </header>
   );

@@ -138,7 +138,7 @@ export async function answerQuestion(raw: string): Promise<AssistantAnswer> {
       }.`,
       viz: {
         kind: "compare",
-        label: "Rage clicks",
+        label: "Frustrated clicks",
         a: { label: "Today", value: r },
         b: { label: "Yesterday", value: ry },
         delta: d,
