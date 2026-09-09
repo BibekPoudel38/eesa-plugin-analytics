@@ -93,6 +93,8 @@ export interface AppCommerce {
   discount: number;
   itemsAdded: number;
   buyers: number;
+  /** Items per order, from the item_count the app attaches to place_order. */
+  avgItems: number;
 }
 
 /** The headline commerce figures, in one pass. */
@@ -108,6 +110,7 @@ export async function loadAppCommerce(
             count(*) filter (where name = 'apply_coupon')                     as coupons,
             coalesce(sum(${num("discount_amount")}) filter (where name = 'apply_coupon'), 0) as discount,
             coalesce(sum(${num("quantity")}) filter (where name = 'add_to_cart'), 0) as items_added,
+            avg(${num("item_count")}) filter (where name = 'place_order')      as avg_items,
             count(distinct user_id) filter (where name = 'place_order' and user_id <> '') as buyers
        from events where ${SCOPE}`,
     [tenantId, siteId, new Date(sinceMs)],
@@ -122,6 +125,7 @@ export async function loadAppCommerce(
     discount: Number(r?.discount ?? 0),
     itemsAdded: Number(r?.items_added ?? 0),
     buyers: Number(r?.buyers ?? 0),
+    avgItems: Number(r?.avg_items ?? 0),
   };
 }
 

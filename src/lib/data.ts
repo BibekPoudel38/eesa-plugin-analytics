@@ -225,14 +225,21 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
   // than events: one phone opened forty times is one phone, and counting
   // events would make the chattiest platform look the biggest.
   const byOs = new Map<string, Set<string>>();
+  const byDevice = new Map<string, Set<string>>();
   for (const e of app) {
     const os = e.os || "Unknown";
     if (!byOs.has(os)) byOs.set(os, new Set());
     byOs.get(os)!.add(e.visitorId);
+    // Phone or tablet — the app reports it on every event and nothing read it.
+    const dev = e.device || "Unknown";
+    if (!byDevice.has(dev)) byDevice.set(dev, new Set());
+    byDevice.get(dev)!.add(e.visitorId);
   }
-  const platforms = [...byOs.entries()]
-    .map(([name, set]) => ({ name, value: set.size }))
-    .sort((a, b) => b.value - a.value);
+  const rank = (m: Map<string, Set<string>>) =>
+    [...m.entries()].map(([name, set]) => ({ name, value: set.size }))
+      .sort((a, b) => b.value - a.value);
+  const platforms = rank(byOs);
+  const devices = rank(byDevice);
 
   return {
     span,
@@ -248,11 +255,12 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     screens: live.liveTopPages(app),
     // analytics.click(name) arrives as a custom event.
     taps: live.liveEvents(app),
-    // Where the app is used, and what it has been doing lately. Both come free
-    // from events already in memory.
-    locations: live.liveLocations(app),
+    // No locations here. The mobile client makes no request carrying geo, so
+    // every app event is "Unknown" — the page says that in words now, and
+    // grouping twenty thousand rows to prove it was a pass for nothing.
     activity: live.liveActivity(now, app),
     platforms,
+    devices,
     commerce,
     items,
     service,

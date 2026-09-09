@@ -154,7 +154,7 @@ export default async function MobileAppPage({
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
               { label: "Revenue", value: money(d.commerce.revenue), sub: `${compactNumber(d.commerce.orders)} orders placed` },
-              { label: "Average order", value: d.commerce.orders ? money(d.commerce.revenue / d.commerce.orders) : "—", sub: `${compactNumber(d.commerce.buyers)} people bought` },
+              { label: "Average order", value: d.commerce.orders ? money(d.commerce.revenue / d.commerce.orders) : "—", sub: d.commerce.avgItems ? `${d.commerce.avgItems.toFixed(1)} items \u00b7 ${compactNumber(d.commerce.buyers)} bought` : `${compactNumber(d.commerce.buyers)} people bought` },
               { label: "Items added", value: compactNumber(d.commerce.itemsAdded), sub: "to baskets, from add_to_cart" },
               { label: "Discounts", value: d.commerce.discount ? money(d.commerce.discount) : "—", sub: `${compactNumber(d.commerce.coupons)} coupons applied` },
             ].map((t) => (
@@ -202,6 +202,15 @@ export default async function MobileAppPage({
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No platform reported yet.
+                  </p>
+                )}
+                {d.devices.length > 1 && (
+                  // Phone vs tablet. Reported on every app event since the
+                  // first one, and shown nowhere until now.
+                  <p className="mt-4 border-t pt-3 text-center text-xs text-muted-foreground">
+                    {d.devices
+                      .map((x) => `${compactNumber(x.value)} on ${x.name.toLowerCase()}`)
+                      .join(" \u00b7 ")}
                   </p>
                 )}
               </div>
