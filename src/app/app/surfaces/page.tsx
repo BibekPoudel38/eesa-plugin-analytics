@@ -4,7 +4,7 @@ import { PageHeader, Eyebrow } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { RangeTabs } from "@/components/app/range-filter";
 import { NoSite } from "@/components/app/no-site";
-import { getAppData, getSurfaces } from "@/lib/data";
+import { getAppData, getCrossSurface, getSurfaces } from "@/lib/data";
 import { compactNumber } from "@/lib/format";
 import { currentScope } from "@/lib/eesa/scope";
 
@@ -124,9 +124,10 @@ export default async function WebAndAppPage({
   if (!scope.authed || !scope.site) return <NoSite />;
   const { range } = await searchParams;
 
-  const [d, surfaces] = await Promise.all([
-    getAppData(scope.tenantId, scope.site.id, range),
+  const [d, surfaces, both] = await Promise.all([
+    getAppData(scope.tenantId, scope.site.id, range, scope.site.timezone),
     getSurfaces(scope.tenantId, 7),
+    getCrossSurface(scope.tenantId, scope.site.id, range),
   ]);
   const site = surfaces.sites.find((s) => s.id === scope.site!.id);
   const rows = (site?.surfaces ?? []).filter((s) => s.events > 0 || s.stopped);
@@ -219,6 +220,54 @@ export default async function WebAndAppPage({
             );
           })}
         </div>
+      </Panel>
+
+      {/* The reason both surfaces report through one tracking key. Counted
+          separately, somebody who browses on the web and orders in the app is
+          two strangers, and every funnel crossing the two is wrong. */}
+      <Panel>
+        <PanelHead
+          title="People who use both"
+          sub="The same customer on the website and in the app — one person, not two"
+        />
+        {both.length ? (
+          <>
+            <p className="px-5 pt-4 text-sm text-muted-foreground">
+              <strong className="text-foreground">{both.length}</strong> signed-in
+              {both.length === 1 ? " customer uses" : " customers use"} both. They
+              are counted once everywhere on this dashboard because the two
+              surfaces share one tracking key.
+            </p>
+            <div className="divide-y">
+              {both.slice(0, 10).map((p) => (
+                <div key={p.userId} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {p.name || p.userId}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    app {compactNumber(p.appEvents)}
+                    {p.appOrders > 0 && ` · ${p.appOrders} order${p.appOrders === 1 ? "" : "s"}`}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    web {compactNumber(p.webEvents)}
+                    {p.webOrders > 0 && ` · ${p.webOrders} order${p.webOrders === 1 ? "" : "s"}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {both.length > 10 && (
+              <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
+                Showing 10 of {both.length}, most recently seen first.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="p-5 text-sm text-muted-foreground">
+            Nobody signed in has used both the app and the website in this
+            window. That is expected while most website visitors browse without
+            signing in — the website records no orders at all today.
+          </p>
+        )}
       </Panel>
     </div>
   );

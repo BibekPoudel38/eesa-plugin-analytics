@@ -11,7 +11,7 @@ import { Donut } from "@/components/charts/donut";
 import { DataBadge } from "@/components/app/data-badge";
 import { NoSite } from "@/components/app/no-site";
 import { getAppData } from "@/lib/data";
-import type { AppEventKind } from "@/lib/db/app";
+import type { AppClock, AppEventKind } from "@/lib/db/app";
 import { eventLabel, fieldLabel, sentence } from "@/lib/vocab";
 import { compactNumber, duration, relativeTime } from "@/lib/format";
 import { axisLabels } from "@/lib/ranges";
@@ -174,6 +174,85 @@ function EventContract({ kinds }: { kinds: AppEventKind[] }) {
   );
 }
 
+/**
+ * When people order, in the restaurant's own timezone.
+ *
+ * Screens and orders are drawn together because they disagree, and the
+ * disagreement is the point: the busiest browsing hour and the busiest
+ * ordering hour are not the same hour, and only one of them tells you when to
+ * have food ready.
+ */
+function Clock({ clock }: { clock: AppClock }) {
+  const hours = Array.from({ length: 24 }, (_, h) =>
+    clock.hours.find((c) => c.key === h) ?? { key: h, label: "", orders: 0, revenue: 0, screens: 0 });
+  const peakOrders = Math.max(1, ...hours.map((h) => h.orders));
+  const peakScreens = Math.max(1, ...hours.map((h) => h.screens));
+  const busiest = hours.reduce((a, b) => (b.orders > a.orders ? b : a), hours[0]);
+  const days = [...clock.days].sort((a, b) => a.key - b.key);
+  const peakDay = days.reduce((a, b) => (b.orders > a.orders ? b : a), days[0] ?? { orders: 0, label: "" });
+  const dayMax = Math.max(1, ...days.map((d) => d.orders));
+  const hourName = (h: number) =>
+    h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`;
+
+  return (
+    <div className="p-5">
+      <p className="mb-4 text-sm text-muted-foreground">
+        Busiest for orders at{" "}
+        <strong className="text-foreground">{hourName(busiest.key)}</strong>
+        {peakDay?.label && (
+          <> · best day <strong className="text-foreground">{peakDay.label}</strong></>
+        )}{" "}
+        <span className="text-xs">({clock.timezone.replace(/_/g, " ")})</span>
+      </p>
+
+      <div className="flex h-32 items-end gap-[3px]">
+        {hours.map((h) => (
+          <div
+            key={h.key}
+            className="group relative flex flex-1 flex-col justify-end gap-[2px]"
+            title={`${hourName(h.key)} — ${h.orders} orders, ${h.screens} screens opened`}
+          >
+            <div
+              className="w-full rounded-sm bg-[var(--ember)]"
+              style={{ height: `${(h.orders / peakOrders) * 68}%` }}
+            />
+            <div
+              className="w-full rounded-sm bg-muted"
+              style={{ height: `${(h.screens / peakScreens) * 26}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        {[0, 6, 12, 18, 23].map((h) => <span key={h}>{hourName(h)}</span>)}
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        <span className="mr-1 inline-block size-2 rounded-sm bg-[var(--ember)]" />
+        orders
+        <span className="ml-3 mr-1 inline-block size-2 rounded-sm bg-muted" />
+        screens opened
+      </p>
+
+      <div className="mt-5 space-y-1.5 border-t pt-4">
+        {days.map((d) => (
+          <div key={d.key} className="flex items-center gap-3 text-sm">
+            <span className="w-9 shrink-0 text-muted-foreground">{d.label}</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-[var(--teal)]"
+                style={{ width: `${(d.orders / dayMax) * 100}%` }}
+              />
+            </div>
+            <span className="w-8 shrink-0 text-right tabular text-muted-foreground">
+              {d.orders}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function MobileAppPage({
   searchParams,
 }: {
@@ -183,7 +262,7 @@ export default async function MobileAppPage({
   if (!scope.authed || !scope.site) return <NoSite />;
   const { range } = await searchParams;
 
-  const d = await getAppData(scope.tenantId, scope.site.id, range);
+  const d = await getAppData(scope.tenantId, scope.site.id, range, scope.site.timezone);
   const labels = axisLabels(range);
 
   return (
@@ -448,42 +527,16 @@ export default async function MobileAppPage({
             </Panel>
           </div>
 
-          <Panel className="overflow-hidden">
-            <PanelHead
-              title="What the app records"
-              sub="Every action the app reports back, how often it happened, and the detail that comes with it"
-            />
-            <EventContract kinds={d.kinds} />
-            <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
-              Screens opened are counted separately —{" "}
-              {compactNumber(d.app.events - d.kinds.reduce((a, k) => a + k.count, 0))} of
-              them in this window, listed under Screens above. A detail marked
-              amber only arrived with some of those actions, not all of them,
-              which usually means the app stopped filling it in.
-            </p>
-          </Panel>
-
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <Panel className="lg:col-span-5">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <Panel>
               <PanelHead
-                title="Where the app is used"
-                sub="The app does not report this — see People"
+                title="When they order"
+                sub="By hour and by day, so prep and staffing can follow the demand"
               />
-              <div className="flex gap-3 p-5 text-sm text-muted-foreground">
-                <MapPin className="mt-0.5 size-4 shrink-0" />
-                <p>
-                  The app does not report where anyone is, so this could only
-                  ever say &quot;Unknown&quot; — for everybody, everywhere. The{" "}
-                  <Link href="/app/people" className="font-medium text-foreground underline underline-offset-2">
-                    People
-                  </Link>{" "}
-                  page shows where your signed-in customers live instead, from
-                  your own customer records.
-                </p>
-              </div>
+              <Clock clock={d.clock} />
             </Panel>
 
-            <Panel className="lg:col-span-7">
+            <Panel>
               <PanelHead
                 title="Latest in the app"
                 sub="The most recent activity, newest first"
@@ -513,6 +566,40 @@ export default async function MobileAppPage({
               </div>
             </Panel>
           </div>
+
+          <Panel className="overflow-hidden">
+            <PanelHead
+              title="What the app records"
+              sub="Every action the app reports back, how often it happened, and the detail that comes with it"
+            />
+            <EventContract kinds={d.kinds} />
+            <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
+              Screens opened are counted separately —{" "}
+              {compactNumber(d.app.events - d.kinds.reduce((a, k) => a + k.count, 0))} of
+              them in this window, listed under Screens above. A detail marked
+              amber only arrived with some of those actions, not all of them,
+              which usually means the app stopped filling it in.
+            </p>
+          </Panel>
+
+          <Panel>
+            <PanelHead
+              title="Where the app is used"
+              sub="The app does not report this — see People"
+            />
+            <div className="flex gap-3 p-5 text-sm text-muted-foreground">
+              <MapPin className="mt-0.5 size-4 shrink-0" />
+              <p>
+                The app does not report where anyone is, so this could only
+                ever say &quot;Unknown&quot; — for everybody, everywhere. The{" "}
+                <Link href="/app/people" className="font-medium text-foreground underline underline-offset-2">
+                  People
+                </Link>{" "}
+                page shows where your signed-in customers live instead, from
+                your own customer records.
+              </p>
+            </div>
+          </Panel>
         </>
       )}
     </div>

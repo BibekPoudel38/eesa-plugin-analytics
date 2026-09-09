@@ -277,3 +277,160 @@ export async function loadAppEventKinds(
     props: (r.props as AppEventProp[] | null) ?? [],
   }));
 }
+
+/**
+ * Everything below is answered in the SITE's timezone, never the reader's.
+ *
+ * A day boundary computed in UTC puts a 6pm Friday order in Los Angeles on
+ * Saturday, and an "orders by hour" chart built that way is wrong by eight
+ * hours for every row — wrong in a way that still looks like a plausible
+ * curve, which is the dangerous kind.
+ */
+
+export interface RetentionPoint {
+  day: number;
+  /** People who had been using the app long enough to be able to come back. */
+  eligible: number;
+  returned: number;
+}
+
+/**
+ * Does anyone come back?
+ *
+ * Day 0 is everybody, by definition. What matters is the shape after it.
+ *
+ * `eligible` is the reason this is not simply a count: somebody who first
+ * opened the app yesterday cannot possibly have a day-7 visit yet, and
+ * counting them in the denominator would drag every later day toward zero and
+ * make a healthy app look like it was dying.
+ */
+export async function loadAppRetention(
+  tenantId: string, siteId: string, sinceMs: number, tz: string, days = 7,
+): Promise<RetentionPoint[]> {
+  const rows = await query<Record<string, string>>(
+    `with f as (
+        select visitor_id, min(ts at time zone $4)::date as d0
+          from events where ${SCOPE} group by 1
+     ),
+     b as (select max(ts at time zone $4)::date as dmax from events where ${SCOPE}),
+     a as (
+        select distinct e.visitor_id,
+               ((e.ts at time zone $4)::date - f.d0)::int as off
+          from events e join f on f.visitor_id = e.visitor_id
+         where ${SCOPE}
+     )
+     select g.off as day,
+            (select count(*) from f, b where f.d0 <= b.dmax - g.off) as eligible,
+            (select count(*) from a where a.off = g.off)              as returned
+       from generate_series(0, $5) g(off)
+      order by 1`,
+    [tenantId, siteId, new Date(sinceMs), tz, days],
+  );
+  return rows.map((r) => ({
+    day: Number(r.day ?? 0),
+    eligible: Number(r.eligible ?? 0),
+    returned: Number(r.returned ?? 0),
+  }));
+}
+
+export interface ClockCell { key: number; label: string; orders: number; revenue: number; screens: number; }
+export interface AppClock { hours: ClockCell[]; days: ClockCell[]; timezone: string; }
+
+/** When people order — by hour of day and by day of week, for prep and staffing. */
+export async function loadAppClock(
+  tenantId: string, siteId: string, sinceMs: number, tz: string,
+): Promise<AppClock> {
+  const shape = (unit: "hour" | "isodow", label: string) => `
+    select extract(${unit} from ts at time zone $4)::int as key,
+           ${label} as label,
+           count(*) filter (where name = 'place_order')                     as orders,
+           coalesce(sum(${num("total")}) filter (where name = 'place_order'), 0) as revenue,
+           count(*) filter (where type = 'pageview')                        as screens
+      from events where ${SCOPE} group by 1, 2 order by 1`;
+  const params = [tenantId, siteId, new Date(sinceMs), tz];
+  const [hours, days] = await Promise.all([
+    query<Record<string, string>>(shape("hour", `to_char(ts at time zone $4, 'FMHHam')`), params),
+    query<Record<string, string>>(shape("isodow", `to_char(ts at time zone $4, 'Dy')`), params),
+  ]);
+  const cell = (r: Record<string, string>): ClockCell => ({
+    key: Number(r.key ?? 0),
+    label: String(r.label ?? ""),
+    orders: Number(r.orders ?? 0),
+    revenue: Number(r.revenue ?? 0),
+    screens: Number(r.screens ?? 0),
+  });
+  return { hours: hours.map(cell), days: days.map(cell), timezone: tz };
+}
+
+export interface LifetimeRow { userId: string; orders: number; spend: number; firstEver: string; }
+
+/**
+ * Spend since the beginning, not since the date filter.
+ *
+ * Everything else on these pages is scoped to the window on purpose. This one
+ * must not be: "how much is this customer worth" is not a question about the
+ * last 30 days, and answering it as if it were quietly turns every regular
+ * into a new face whenever somebody narrows the range.
+ */
+export async function loadAppLifetime(
+  tenantId: string, siteId: string,
+): Promise<Map<string, LifetimeRow>> {
+  const rows = await query<Record<string, string | Date>>(
+    `select user_id,
+            count(*) filter (where name = 'place_order') as orders,
+            coalesce(sum(${num("total")}) filter (where name = 'place_order'), 0) as spend,
+            min(ts) as first_ever
+       from events
+      where tenant_id = $1 and site_id = $2 and display_mode = 'app' and user_id <> ''
+      group by 1`,
+    [tenantId, siteId],
+  );
+  return new Map(rows.map((r) => [String(r.user_id), {
+    userId: String(r.user_id),
+    orders: Number(r.orders ?? 0),
+    spend: Number(r.spend ?? 0),
+    firstEver: r.first_ever ? new Date(r.first_ever as Date).toISOString() : "",
+  }]));
+}
+
+export interface CrossSurfacePerson {
+  userId: string; appEvents: number; webEvents: number;
+  appOrders: number; webOrders: number; lastSeen: string;
+}
+
+/**
+ * The people who use both the app and the website.
+ *
+ * They are the reason both surfaces report through one tracking key: counted
+ * separately, somebody who browses on the web and orders in the app is two
+ * strangers, and every funnel that crosses the two is wrong.
+ */
+export async function loadCrossSurface(
+  tenantId: string, siteId: string, sinceMs: number, limit = 200,
+): Promise<CrossSurfacePerson[]> {
+  const rows = await query<Record<string, string | Date>>(
+    `select user_id,
+            count(*) filter (where display_mode = 'app')  as app_events,
+            count(*) filter (where display_mode <> '' and display_mode <> 'app') as web_events,
+            count(*) filter (where display_mode = 'app'  and name = 'place_order') as app_orders,
+            count(*) filter (where display_mode <> '' and display_mode <> 'app'
+                                                     and name = 'place_order') as web_orders,
+            max(ts) as last_seen
+       from events
+      where tenant_id = $1 and site_id = $2 and ts >= $3 and user_id <> ''
+      group by 1
+     having count(*) filter (where display_mode = 'app') > 0
+        and count(*) filter (where display_mode <> '' and display_mode <> 'app') > 0
+      order by max(ts) desc
+      limit $4`,
+    [tenantId, siteId, new Date(sinceMs), limit],
+  );
+  return rows.map((r) => ({
+    userId: String(r.user_id),
+    appEvents: Number(r.app_events ?? 0),
+    webEvents: Number(r.web_events ?? 0),
+    appOrders: Number(r.app_orders ?? 0),
+    webOrders: Number(r.web_orders ?? 0),
+    lastSeen: r.last_seen ? new Date(r.last_seen as Date).toISOString() : "",
+  }));
+}

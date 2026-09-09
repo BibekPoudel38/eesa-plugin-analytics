@@ -20,6 +20,8 @@ export interface Site {
   recordReplay: boolean;
   maskInputs: boolean;
   status: "active" | "paused" | "disabled" | string;
+  /** IANA zone. Day and hour boundaries are computed in it, not the reader's. */
+  timezone: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +38,7 @@ interface SiteRow {
   mask_inputs: boolean;
   status: string;
   created_by: string;
+  timezone: string;
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +54,7 @@ function mapSite(r: SiteRow): Site {
     recordReplay: r.record_replay,
     maskInputs: r.mask_inputs,
     status: r.status,
+    timezone: r.timezone || "UTC",
     createdBy: r.created_by,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -63,7 +67,7 @@ export function generateTrackingKey(): string {
 }
 
 const COLS =
-  "id, tenant_id, name, domain, tracking_key, allowed_origins, record_replay, mask_inputs, status, created_by, created_at, updated_at";
+  "id, tenant_id, name, domain, tracking_key, allowed_origins, record_replay, mask_inputs, status, timezone, created_by, created_at, updated_at";
 
 export async function listSites(tenantId: string): Promise<Site[]> {
   const rows = await query<SiteRow>(

@@ -30,6 +30,7 @@ create table if not exists sites (
     record_replay   boolean not null default false,   -- rrweb off by default (privacy)
     mask_inputs     boolean not null default true,    -- when replay on, force maskAllInputs
     status          text not null default 'active',   -- active | paused | disabled
+    timezone        text not null default 'UTC',      -- IANA zone; day/hour boundaries are computed in it
     created_by      text not null default '',         -- Eesa user id (token sub)
     created_at      timestamptz not null default now(),
     updated_at      timestamptz not null default now()

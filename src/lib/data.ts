@@ -95,6 +95,16 @@ export async function getLiveStatus(tenantId: string, siteId?: string) {
  *  Native client reports "app"; grouping on it is the only thing that can tell
  *  a dead integration from a quiet Tuesday.
  */
+/** Who uses both surfaces, with names where the directory can supply them. */
+export async function getCrossSurface(
+  tenantId: string, siteId: string, range?: string,
+) {
+  const since = Date.now() - rangeDays(range) * DAY;
+  const people = await appdb.loadCrossSurface(tenantId, siteId, since);
+  const directory = await resolveCustomers(tenantId, people.map((p) => p.userId));
+  return people.map((p) => ({ ...p, name: directory[p.userId]?.name ?? "" }));
+}
+
 export async function getSurfaces(tenantId: string, days = 7) {
   const since = Date.now() - days * DAY;
   const [sites, rows] = await Promise.all([
@@ -164,17 +174,27 @@ export async function getAppPeople(
   tenantId: string,
   siteId: string,
   range?: string,
+  timezone = "UTC",
 ) {
   const now = Date.now();
   const since = now - rangeDays(range) * DAY;
 
-  const [people, commerce] = await Promise.all([
+  const [people, commerce, retention, lifetime] = await Promise.all([
     appdb.loadAppPeople(tenantId, siteId, since),
     appdb.loadAppCommerce(tenantId, siteId, since),
+    appdb.loadAppRetention(tenantId, siteId, since, timezone),
+    appdb.loadAppLifetime(tenantId, siteId),
   ]);
   const directory = await resolveCustomers(tenantId, people.map((p) => p.userId));
 
-  const rows = people.map((p) => ({ ...p, customer: directory[p.userId] ?? null }));
+  const rows = people.map((p) => ({
+    ...p,
+    customer: directory[p.userId] ?? null,
+    // Since the beginning, not since the date filter — see loadAppLifetime.
+    lifetimeSpend: lifetime.get(p.userId)?.spend ?? 0,
+    lifetimeOrders: lifetime.get(p.userId)?.orders ?? 0,
+    firstEver: lifetime.get(p.userId)?.firstEver ?? p.firstSeen,
+  }));
   const named = rows.filter((r) => r.customer?.name).length;
 
   // The shape of the audience, which is the question a restaurant actually
@@ -216,13 +236,16 @@ export async function getAppPeople(
     zipOnly,
     noCity,
     segments,
+    retention,
     named,
     /** False when the directory answered nothing — worth saying on the page. */
     directoryUp: Object.keys(directory).length > 0 || people.length === 0,
   };
 }
 
-export async function getAppData(tenantId: string, siteId: string, range?: string) {
+export async function getAppData(
+  tenantId: string, siteId: string, range?: string, timezone = "UTC",
+) {
   const now = Date.now();
   const since = now - rangeDays(range) * DAY;
 
@@ -235,7 +258,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
   // until now: every add_to_cart, payment_started, place_order and
   // apply_coupon arrives with its properties attached. All aggregates, so the
   // extra detail costs one round trip rather than another 20,000 rows.
-  const [app, totals, commerce, items, service, payment, coupons, kinds] =
+  const [app, totals, commerce, items, service, payment, coupons, kinds, clock] =
     await Promise.all([
     loadEvents(tenantId, siteId, since, 200_000, "app"),
     loadSurfaceTotals(tenantId, siteId, since),
@@ -247,6 +270,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
       event: "apply_coupon", sum: "discount_amount", limit: 8,
     }),
     appdb.loadAppEventKinds(tenantId, siteId, since),
+    appdb.loadAppClock(tenantId, siteId, since, timezone),
   ]);
   const span: [number, number] = [since, now];
 
@@ -309,6 +333,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     payment,
     coupons,
     kinds,
+    clock,
   };
 }
 

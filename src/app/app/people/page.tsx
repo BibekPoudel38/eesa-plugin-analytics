@@ -42,6 +42,73 @@ function Tile({ label, value, sub }: { label: string; value: string; sub: string
   );
 }
 
+/**
+ * Does anyone come back?
+ *
+ * Day 0 is everyone, by definition — the bar worth reading is day 1, and the
+ * shape after it. Each bar's denominator counts only people who had been using
+ * the app long enough to be able to return by then; somebody who installed it
+ * yesterday is not evidence about day 7, and including them would drag the
+ * whole curve down and make a healthy app look like it was dying.
+ */
+function Retention({ points }: { points: { day: number; eligible: number; returned: number }[] }) {
+  const usable = points.filter((p) => p.eligible > 0);
+  if (usable.length < 2) {
+    return (
+      <p className="p-5 text-sm text-muted-foreground">
+        Not enough history yet to say whether people come back.
+      </p>
+    );
+  }
+  const day1 = usable.find((p) => p.day === 1);
+  const last = usable[usable.length - 1];
+  const pct = (p: { eligible: number; returned: number }) =>
+    p.eligible ? (p.returned / p.eligible) * 100 : 0;
+  return (
+    <div className="p-5">
+      <p className="mb-4 text-sm text-muted-foreground">
+        {day1 && (
+          <>
+            <strong className="text-foreground">{Math.round(pct(day1))}%</strong> come
+            back the next day
+          </>
+        )}
+        {day1 && last.day > 1 && (
+          <>
+            , <strong className="text-foreground">{Math.round(pct(last))}%</strong> are
+            still opening it {last.day} days on
+          </>
+        )}
+        .
+      </p>
+      <div className="flex h-28 items-end gap-1.5">
+        {usable.map((p) => (
+          <div
+            key={p.day}
+            className="flex flex-1 flex-col justify-end"
+            title={`Day ${p.day}: ${p.returned} of ${p.eligible} came back`}
+          >
+            <span className="mb-1 text-center text-[10px] tabular text-muted-foreground">
+              {Math.round(pct(p))}%
+            </span>
+            <div
+              className="w-full rounded-t-sm bg-[var(--teal)]"
+              style={{ height: `${Math.max(pct(p), 1.5)}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1.5 text-center text-[10px] text-muted-foreground">
+        {usable.map((p) => (
+          <span key={p.day} className="flex-1">
+            {p.day === 0 ? "first" : `d${p.day}`}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function AppPeoplePage({
   searchParams,
 }: {
@@ -51,9 +118,13 @@ export default async function AppPeoplePage({
   if (!scope.authed || !scope.site) return <NoSite />;
   const { range } = await searchParams;
 
-  const d = await getAppPeople(scope.tenantId, scope.site.id, range);
+  const d = await getAppPeople(scope.tenantId, scope.site.id, range, scope.site.timezone);
   const spend = d.rows.reduce((a, r) => a + r.spend, 0);
   const buyers = d.segments.repeat + d.segments.once;
+  const topLifetime = [...d.rows]
+    .filter((r) => r.lifetimeSpend > 0)
+    .sort((a, b) => b.lifetimeSpend - a.lifetimeSpend)
+    .slice(0, 8);
 
   return (
     <div className="space-y-6 p-6">
@@ -130,6 +201,44 @@ export default async function AppPeoplePage({
             />
             <PeopleTable rows={d.rows} />
           </Panel>
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            <Panel className="lg:col-span-7">
+              <PanelHead
+                title="Do they come back?"
+                sub="Of the people using the app, how many open it again"
+              />
+              <Retention points={d.retention} />
+            </Panel>
+
+            <Panel className="lg:col-span-5">
+              <PanelHead
+                title="Worth the most"
+                sub="Total spend since they started, not just this window"
+              />
+              <div className="divide-y">
+                {topLifetime.length ? (
+                  topLifetime.map((r) => (
+                    <div key={r.userId} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                      <span className="min-w-0 truncate">
+                        <span className="font-medium text-foreground">
+                          {r.customer?.name || r.userId}
+                        </span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {r.lifetimeOrders} order{r.lifetimeOrders === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <span className="shrink-0 tabular font-medium text-foreground">
+                        {money(r.lifetimeSpend)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="p-5 text-sm text-muted-foreground">No orders yet.</p>
+                )}
+              </div>
+            </Panel>
+          </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             <Panel className="lg:col-span-5">
