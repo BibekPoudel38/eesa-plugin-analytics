@@ -39,6 +39,10 @@ export interface AppPerson {
   firstSeen: string;
   lastSeen: string;
   platform: string;
+  /** What they add most — the app sends item_name on every add_to_cart. */
+  topItem: string;
+  /** Delivery or pickup, whichever they choose more often. */
+  service: string;
 }
 
 /**
@@ -61,7 +65,14 @@ export async function loadAppPeople(
             min(ts) as first_seen, max(ts) as last_seen,
             -- One person is one phone in practice; mode() picks the platform
             -- they actually use rather than whichever row sorted first.
-            mode() within group (order by os) as platform
+            mode() within group (order by os) as platform,
+            -- The two things a restaurant would actually act on, and both ride
+            -- on events the app already sends.
+            mode() within group (order by props->>'item_name')
+              filter (where name = 'add_to_cart'
+                        and coalesce(props->>'item_name', '') <> '') as top_item,
+            mode() within group (order by props->>'service_type')
+              filter (where coalesce(props->>'service_type', '') <> '') as service
        from events
       where ${SCOPE} and user_id <> ''
       group by 1
@@ -79,6 +90,8 @@ export async function loadAppPeople(
     firstSeen: r.first_seen ? new Date(r.first_seen as Date).toISOString() : "",
     lastSeen: r.last_seen ? new Date(r.last_seen as Date).toISOString() : "",
     platform: String(r.platform ?? ""),
+    topItem: String(r.top_item ?? ""),
+    service: String(r.service ?? ""),
   }));
 }
 

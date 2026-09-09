@@ -4,9 +4,9 @@ import { PageHeader } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
 import { BarList } from "@/components/charts/bar-list";
 import { NoSite } from "@/components/app/no-site";
+import { PeopleTable } from "@/components/app/people-table";
 import { getAppPeople } from "@/lib/data";
 import { compactNumber } from "@/lib/format";
-import { formatPhone } from "@/lib/eesa/directory";
 import { currentScope } from "@/lib/eesa/scope";
 
 export const dynamic = "force-dynamic";
@@ -26,25 +26,21 @@ export const dynamic = "force-dynamic";
  */
 
 function money(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return n.toLocaleString("en-US", {
+    style: "currency", currency: "USD",
+    maximumFractionDigits: n >= 1000 ? 0 : 2,
+  });
 }
 
-function day(iso: string): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+function Tile({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular text-foreground">{value}</p>
+      <p className="text-xs text-muted-foreground">{sub}</p>
+    </div>
+  );
 }
-
-function ago(iso: string): string {
-  if (!iso) return "—";
-  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
-  if (!Number.isFinite(mins)) return "—";
-  if (mins < 60) return `${Math.max(mins, 1)}m ago`;
-  const h = Math.round(mins / 60);
-  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
-}
-
-const TH = "px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
-const TD = "px-3 py-2.5 align-middle";
 
 export default async function AppPeoplePage({
   searchParams,
@@ -57,7 +53,7 @@ export default async function AppPeoplePage({
 
   const d = await getAppPeople(scope.tenantId, scope.site.id, range);
   const spend = d.rows.reduce((a, r) => a + r.spend, 0);
-  const withPhone = d.rows.filter((r) => r.customer?.phone).length;
+  const buyers = d.segments.repeat + d.segments.once;
 
   return (
     <div className="space-y-6 p-6">
@@ -97,132 +93,89 @@ export default async function AppPeoplePage({
             </div>
           )}
 
+          {/* The shape of the audience, not the same number four times. Who
+              came back is a different question from who never ordered, and
+              only one of them is a problem you can do something about. */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {[
-              { label: "Signed in", value: compactNumber(d.rows.length), sub: "people the app named" },
-              { label: "Reachable", value: compactNumber(withPhone), sub: "have a phone on file" },
-              { label: "Ordered", value: compactNumber(d.commerce.buyers), sub: `${compactNumber(d.commerce.orders)} orders` },
-              { label: "Spend", value: money(spend), sub: d.commerce.orders ? `${money(spend / d.commerce.orders)} average` : "no orders yet" },
-            ].map((t) => (
-              <div key={t.label} className="rounded-xl border bg-card p-4">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</p>
-                <p className="mt-1 text-2xl font-semibold tabular text-foreground">{t.value}</p>
-                <p className="text-xs text-muted-foreground">{t.sub}</p>
-              </div>
-            ))}
+            <Tile
+              label="Came back"
+              value={compactNumber(d.segments.repeat)}
+              sub={buyers ? `${Math.round((d.segments.repeat / buyers) * 100)}% of buyers` : "no orders yet"}
+            />
+            <Tile
+              label="Ordered once"
+              value={compactNumber(d.segments.once)}
+              sub="the people to win back"
+            />
+            <Tile
+              label="Never ordered"
+              value={compactNumber(d.segments.browsing)}
+              sub={`signed in, browsed ${compactNumber(d.rows.filter((r) => r.orders === 0).reduce((a, r) => a + r.screens, 0))} screens`}
+            />
+            <Tile
+              label="Spend"
+              value={money(spend)}
+              sub={d.commerce.orders ? `${money(spend / d.commerce.orders)} average · ${compactNumber(d.commerce.orders)} orders` : "no orders yet"}
+            />
           </div>
 
+          {/* Full width. Spend and orders are the point of this table, and at
+              two-thirds width with ten columns they sat off the right edge
+              behind a horizontal scrollbar nobody would think to drag. */}
+          <Panel className="overflow-hidden">
+            <PanelHead
+              title="Everyone in the app"
+              sub="Search by name, phone, email or dish. Contact details come from your own customer records, by id."
+            />
+            <PeopleTable rows={d.rows} />
+          </Panel>
+
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <Panel className="lg:col-span-8 overflow-hidden">
+            <Panel className="lg:col-span-5">
               <PanelHead
-                title="Everyone in the app"
-                sub="Ranked by spend. Contact details come from your own customer records, by id."
+                title="Where they are"
+                sub="From your customer records — the app's own events carry no location"
               />
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] text-sm">
-                  <thead className="border-b bg-muted/40">
-                    <tr>
-                      <th className={TH}>Person</th>
-                      <th className={TH}>Contact</th>
-                      <th className={TH}>City</th>
-                      <th className={`${TH} text-right`}>Visits</th>
-                      <th className={`${TH} text-right`}>Screens</th>
-                      <th className={`${TH} text-right`}>Added</th>
-                      <th className={`${TH} text-right`}>Orders</th>
-                      <th className={`${TH} text-right`}>Spend</th>
-                      <th className={`${TH} text-right`}>Last seen</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {d.rows.slice(0, 200).map((r) => (
-                      <tr key={r.userId} className="hover:bg-muted/30">
-                        <td className={TD}>
-                          <div className="font-medium text-foreground">
-                            {r.customer?.name || r.userId}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {r.customer?.name ? `${r.userId} · ` : ""}
-                            {r.platform || "unknown"}
-                            {r.customer?.since ? ` · since ${day(r.customer.since)}` : ""}
-                          </div>
-                        </td>
-                        <td className={TD}>
-                          {r.customer?.phone ? (
-                            <a
-                              href={`tel:${r.customer.phone}`}
-                              className="tabular text-foreground hover:underline"
-                            >
-                              {formatPhone(r.customer.phone)}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                          {r.customer?.email && (
-                            <div className="truncate text-xs text-muted-foreground">
-                              {r.customer.email}
-                            </div>
-                          )}
-                        </td>
-                        <td className={`${TD} text-muted-foreground`}>
-                          {r.customer?.city || "—"}
-                        </td>
-                        <td className={`${TD} text-right tabular`}>{r.sessions}</td>
-                        <td className={`${TD} text-right tabular`}>{compactNumber(r.screens)}</td>
-                        <td className={`${TD} text-right tabular`}>{r.carted || "—"}</td>
-                        <td className={`${TD} text-right tabular`}>{r.orders || "—"}</td>
-                        <td className={`${TD} text-right tabular font-medium text-foreground`}>
-                          {r.spend ? money(r.spend) : "—"}
-                        </td>
-                        <td className={`${TD} text-right text-xs text-muted-foreground`}>
-                          {ago(r.lastSeen)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="p-5">
+                {d.cities.length ? (
+                  <BarList
+                    items={d.cities.slice(0, 10).map((c) => ({ label: c.name, value: c.value }))}
+                    valueFormatter={compactNumber}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No city on file for anyone in this window.
+                  </p>
+                )}
+                {(d.zipOnly > 0 || d.noCity > 0) && (
+                  // Said plainly rather than ranking a postcode next to a place
+                  // name, which is what the column actually contains.
+                  <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+                    {d.zipOnly > 0 && <>{compactNumber(d.zipOnly)} have only a postcode on file</>}
+                    {d.zipOnly > 0 && d.noCity > 0 && " · "}
+                    {d.noCity > 0 && <>{compactNumber(d.noCity)} have no city at all</>}
+                  </p>
+                )}
               </div>
-              {d.rows.length > 200 && (
-                <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
-                  Showing the top 200 of {compactNumber(d.rows.length)} by spend.
-                </p>
-              )}
             </Panel>
 
-            <div className="space-y-5 lg:col-span-4">
-              <Panel>
-                <PanelHead
-                  title="Where they are"
-                  sub="From your customer records — the app's events carry no location"
-                />
-                <div className="p-5">
-                  {d.cities.length ? (
-                    <BarList
-                      items={d.cities.slice(0, 10).map((c) => ({ label: c.name, value: c.value }))}
-                      valueFormatter={compactNumber}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No city on file for anyone in this window.
-                    </p>
-                  )}
-                </div>
-              </Panel>
-
-              <Panel>
-                <PanelHead title="Where these names come from" />
-                <div className="flex gap-3 p-5 text-sm text-muted-foreground">
-                  <Info className="mt-0.5 size-4 shrink-0" />
-                  <p>
-                    The app sends only a customer id — never a name or a phone
-                    number. It couldn&apos;t: the endpoint that receives app
-                    events is public, so anything posted there could be posted
-                    by anyone. The details on this page are read from your own
-                    customer records at the moment the page loads, by the ids
-                    above, and are never stored in analytics.
-                  </p>
-                </div>
-              </Panel>
-            </div>
+            <Panel className="lg:col-span-7">
+              <PanelHead title="Where these names come from" />
+              <div className="flex gap-3 p-5 text-sm text-muted-foreground">
+                <Info className="mt-0.5 size-4 shrink-0" />
+                <p>
+                  The app sends only a customer id — never a name or a phone
+                  number. It couldn&apos;t: the endpoint that receives app
+                  events is public, so anything posted there could be posted by
+                  anyone. The details on this page are read from your own
+                  customer records at the moment the page loads, by the ids the
+                  app reported, and are never stored in analytics. Favourite
+                  dish and delivery-or-pickup come the other way — from the
+                  app&apos;s own <code>add_to_cart</code> and{" "}
+                  <code>place_order</code> events.
+                </p>
+              </div>
+            </Panel>
           </div>
         </>
       )}

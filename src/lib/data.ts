@@ -153,6 +153,13 @@ export async function getSurfaces(tenantId: string, days = 7) {
  * the other's question, and the directory half is optional — when it is
  * unreachable every row still renders, keyed by the id it always had.
  */
+/** "irvine " and "Irvine" are one place. A bare postcode is left alone. */
+function cleanCity(raw: string): string {
+  const t = (raw || "").trim().replace(/\s+/g, " ");
+  if (!t || /^\d{5}(-\d{4})?$/.test(t)) return t;
+  return t.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
 export async function getAppPeople(
   tenantId: string,
   siteId: string,
@@ -170,25 +177,45 @@ export async function getAppPeople(
   const rows = people.map((p) => ({ ...p, customer: directory[p.userId] ?? null }));
   const named = rows.filter((r) => r.customer?.name).length;
 
+  // The shape of the audience, which is the question a restaurant actually
+  // has. "179 people signed in" and "179 have a phone" say the same thing
+  // twice; 18 who came back, 40 who ordered once and 121 who never ordered at
+  // all are three different problems.
+  const segments = {
+    repeat: rows.filter((r) => r.orders > 1).length,
+    once: rows.filter((r) => r.orders === 1).length,
+    browsing: rows.filter((r) => r.orders === 0).length,
+  };
+
   // Where people are, from the directory — the events themselves carry no geo
   // for the app at all (the mobile client posts server-side, so there is no
   // browser request to enrich), which is why the shared location panel reads
   // "Unknown" for every one of them.
+  //
+  // The column is free text and holds both — "Irvine", "Irvine " and "92882"
+  // are all in there. Grouping it raw split one city across two bars and
+  // ranked a postcode alongside a place name.
   const byCity = new Map<string, number>();
+  let zipOnly = 0;
+  let noCity = 0;
   for (const r of rows) {
-    const city = r.customer?.city?.trim();
-    if (!city) continue;
+    const city = cleanCity(r.customer?.city ?? "");
+    if (!city) { noCity += 1; continue; }
+    if (/^\d{5}(-\d{4})?$/.test(city)) { zipOnly += 1; continue; }
     byCity.set(city, (byCity.get(city) ?? 0) + 1);
   }
   const cities = [...byCity.entries()]
     .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
 
   return {
     span: [since, now] as [number, number],
     rows,
     commerce,
     cities,
+    zipOnly,
+    noCity,
+    segments,
     named,
     /** False when the directory answered nothing — worth saying on the page. */
     directoryUp: Object.keys(directory).length > 0 || people.length === 0,

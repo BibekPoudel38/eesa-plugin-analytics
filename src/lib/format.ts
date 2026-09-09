@@ -38,3 +38,13 @@ export function relativeTime(minutesAgo: number): string {
   const days = hours / 24;
   return `${Math.round(days)}d ago`;
 }
+
+/** "+15551234567" → "+1 (555) 123-4567". Anything unexpected is left alone. */
+export function formatPhone(raw: string): string {
+  const digits = (raw || "").replace(/[^\d]/g, "");
+  const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1)
+    : digits.length === 10 ? digits
+    : "";
+  if (!local) return raw || "";
+  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
+}
