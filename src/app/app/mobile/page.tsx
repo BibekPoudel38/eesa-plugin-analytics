@@ -344,8 +344,13 @@ export default async function MobileAppPage({
                         key={t.name}
                         className="flex items-center justify-between gap-3 text-sm"
                       >
-                        <span className="truncate font-medium text-foreground">
-                          {t.name}
+                        <span className="min-w-0 truncate">
+                          <span className="font-medium text-foreground">
+                            {eventLabel(t.name)}
+                          </span>{" "}
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {t.name}
+                          </span>
                         </span>
                         <span className="flex shrink-0 items-center gap-3 text-muted-foreground">
                           <span className="tabular">
