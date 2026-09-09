@@ -34,6 +34,7 @@ interface EventRow {
   depth: number | null;
   name: string | null;
   props: Record<string, unknown> | null;
+  display_mode: string;
 }
 
 function locationLabel(city: string, country: string): string {
@@ -56,7 +57,11 @@ export async function loadEvents(
     `select e.ts, e.client_ts, e.type, e.path, e.visitor_id, e.session_id,
             coalesce(nullif(e.user_id, ''), i.user_id, '') as user_id,
             e.referrer, e.device, e.browser, e.os, e.country, e.city,
-            e.x, e.y, e.target, e.text, e.depth, e.name, e.props
+            e.x, e.y, e.target, e.text, e.depth, e.name, e.props,
+            -- Which surface sent it. Selected so every existing aggregation
+            -- can be run over one surface instead of the merged pile; without
+            -- it the app's 19,000 events could be counted but never analysed.
+            e.display_mode
        from events e
        left join identities i
               on i.tenant_id  = e.tenant_id
@@ -82,6 +87,7 @@ export async function loadEvents(
       depth: r.depth ?? undefined,
       name: r.name ?? undefined,
       props: (r.props as StoredEvent["props"]) ?? undefined,
+      displayMode: r.display_mode || undefined,
       siteId,
       visitorId: r.visitor_id,
       sessionId: r.session_id,

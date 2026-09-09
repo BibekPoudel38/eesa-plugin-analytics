@@ -88,4 +88,10 @@ export type StoredEvent = RawEvent & {
   origin: string;
   /** server receive time (authoritative for ordering) */
   recvTs: number;
+  /** Which surface sent it: "app" from the mobile client, or the browser's
+   *  display-mode ("browser", "standalone", "fullscreen"). Undefined on events
+   *  captured before the tracker reported it. Carried through so an
+   *  aggregation can be run over ONE surface: the app and the website share a
+   *  tracking key, and merged into one pile a broken app is invisible. */
+  displayMode?: string;
 };

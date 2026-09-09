@@ -125,6 +125,67 @@ export async function getSurfaces(tenantId: string, days = 7) {
   };
 }
 
+/** Everything the Web &amp; app page draws, for ONE surface at a time.
+ *
+ *  The website and the mobile app report through one tracking key on purpose,
+ *  so a customer who browses on mobile web and orders in the app stays one
+ *  person. Every other page here is better for that. This is where the bill is
+ *  paid: merged into one stream a broken app is invisible, because it stops
+ *  sending into traffic that is still busy.
+ *
+ *  The split is a filter over the same events the overview already loads, so
+ *  every aggregation below is the one the rest of the dashboard uses. A second
+ *  set of app-only maths would be a second set to keep true.
+ */
+export async function getAppData(tenantId: string, siteId: string, range?: string) {
+  const now = Date.now();
+  const { evs, span } = await windowed(tenantId, siteId, range);
+
+  const app = evs.filter((e) => e.displayMode === "app");
+  // Everything that is not the app and not unlabelled. Events captured before
+  // the tracker reported a surface are excluded from BOTH sides rather than
+  // quietly counted as web — they are old-tracker traffic and attributing them
+  // would overstate the website at the app's expense.
+  const web = evs.filter((e) => e.displayMode && e.displayMode !== "app");
+
+  const totals = (list: typeof evs) => ({
+    events: list.length,
+    visitors: new Set(list.map((e) => e.visitorId)).size,
+    sessions: new Set(list.map((e) => e.sessionId)).size,
+    identified: new Set(list.filter((e) => e.userId).map((e) => e.userId)).size,
+  });
+
+  // iOS vs Android, from the os the client reports. Counted over VISITORS
+  // rather than events: one person opening the app forty times is one phone,
+  // and counting events would make the chattiest platform look the biggest.
+  const byOs = new Map<string, Set<string>>();
+  for (const e of app) {
+    const os = e.os || "Unknown";
+    if (!byOs.has(os)) byOs.set(os, new Set());
+    byOs.get(os)!.add(e.visitorId);
+  }
+  const platforms = [...byOs.entries()]
+    .map(([name, set]) => ({ name, value: set.size }))
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    span,
+    app: totals(app),
+    web: totals(web),
+    hasApp: app.length > 0,
+    hasWeb: web.length > 0,
+    lastSeen: app.length ? Math.max(...app.map((e) => e.recvTs)) : null,
+    kpis: live.liveKpis(now, app),
+    trend: live.liveTrend(app, span),
+    // analytics.screen(route.name) arrives as a pageview whose path is the
+    // screen name, so "top pages" is "top screens" without changing anything.
+    screens: live.liveTopPages(app),
+    // analytics.click(name) arrives as a custom event.
+    taps: live.liveEvents(app),
+    platforms,
+  };
+}
+
 export async function getOverview(
   tenantId: string,
   siteId: string,
