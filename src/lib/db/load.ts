@@ -182,3 +182,79 @@ export async function loadRecentEvents(
     ts: r.ts.getTime(),
   }));
 }
+
+
+/** One surface's activity on one site: what arrived, and when it last did.
+ *
+ *  `display_mode` has been written on every event since the tracker learned to
+ *  send it, and read by nothing — so 20,000 app events sat in the same pile as
+ *  the website's and no screen could tell them apart. This is the read side of
+ *  the split that was promised when the app client shipped.
+ *
+ *  Two windows, not one. A surface that has gone silent is the failure this is
+ *  built to catch, and silence is only visible against what came before: zero
+ *  events reads as health when you cannot see that yesterday it was twelve
+ *  thousand.
+ */
+export interface SurfaceRow {
+  siteId: string;
+  mode: string;          // raw display_mode: app | browser | standalone | …
+  events: number;
+  visitors: number;
+  identified: number;    // events carrying a user id — identify() working
+  lastSeen: string | null;
+  priorEvents: number;   // the window before this one
+}
+
+export async function loadSurfaces(
+  tenantId: string,
+  sinceMs: number,
+): Promise<SurfaceRow[]> {
+  const since = new Date(sinceMs);
+  const prior = new Date(sinceMs - (Date.now() - sinceMs));
+  const rows = await query<{
+    site_id: string; mode: string; events: string; visitors: string;
+    identified: string; last_seen: Date | null; prior_events: string;
+  }>(
+    `with cur as (
+       select site_id,
+              coalesce(nullif(display_mode, ''), 'unknown') as mode,
+              count(*)                                  as events,
+              count(distinct visitor_id)                as visitors,
+              count(*) filter (where user_id <> '')     as identified,
+              max(ts)                                   as last_seen
+         from events
+        where tenant_id = $1 and ts >= $2
+        group by 1, 2
+     ), prev as (
+       select site_id,
+              coalesce(nullif(display_mode, ''), 'unknown') as mode,
+              count(*) as prior_events
+         from events
+        where tenant_id = $1 and ts >= $3 and ts < $2
+        group by 1, 2
+     )
+     -- FULL OUTER: a surface present in only one window is exactly the
+     -- interesting case. An inner join would hide the one that stopped.
+     select coalesce(c.site_id, p.site_id)                as site_id,
+            coalesce(c.mode, p.mode)                      as mode,
+            coalesce(c.events, 0)                         as events,
+            coalesce(c.visitors, 0)                       as visitors,
+            coalesce(c.identified, 0)                     as identified,
+            c.last_seen                                   as last_seen,
+            coalesce(p.prior_events, 0)                   as prior_events
+       from cur c
+       full outer join prev p on p.site_id = c.site_id and p.mode = c.mode`,
+    [tenantId, since, prior],
+  );
+  // bigints arrive as strings — see loadCounts.
+  return rows.map((r) => ({
+    siteId: String(r.site_id),
+    mode: r.mode,
+    events: Number(r.events ?? 0),
+    visitors: Number(r.visitors ?? 0),
+    identified: Number(r.identified ?? 0),
+    lastSeen: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+    priorEvents: Number(r.prior_events ?? 0),
+  }));
+}

@@ -3,7 +3,7 @@ import { cache } from "react";
 import * as live from "@/lib/live/aggregate";
 import { rangeDays } from "@/lib/ranges";
 import type { StoredEvent } from "@/lib/live/types";
-import { loadCounts, loadEvents, loadRecentEvents } from "@/lib/db/load";
+import { loadCounts, loadEvents, loadRecentEvents, loadSurfaces } from "@/lib/db/load";
 import { listSites, getSite } from "@/lib/db/sites";
 import { listGoals } from "@/lib/db/goals";
 import { recordingIdsFor } from "@/lib/live/recordings";
@@ -73,6 +73,65 @@ export async function getLiveStatus(tenantId: string, siteId?: string) {
     sessions: counts.sessions,
     sites,
     recent,
+  };
+}
+
+/** Which surfaces are reporting for this tenant, and which have gone quiet.
+ *
+ *  The website and the app share one tracking key on purpose — a separate key
+ *  would split the same customers across two dashboards and lose the funnel.
+ *  The cost of that choice is that a broken app is invisible: its events simply
+ *  stop arriving into a pile that is still busy with the website's.
+ *
+ *  Hence this. The site's own tracker reports `display_mode`, and the React
+ *  Native client reports "app"; grouping on it is the only thing that can tell
+ *  a dead integration from a quiet Tuesday.
+ */
+export async function getSurfaces(tenantId: string, days = 7) {
+  const since = Date.now() - days * DAY;
+  const [sites, rows] = await Promise.all([
+    listSites(tenantId),
+    loadSurfaces(tenantId, since),
+  ]);
+  // Raw display_mode is a CSS media feature plus one value the app invents, so
+  // it is grouped into things a person recognises. Unknown is kept visible
+  // rather than folded into the website: it is old-tracker traffic, and hiding
+  // it would overstate how much of the site is actually reporting properly.
+  const KIND: Record<string, string> = {
+    app: "app",
+    browser: "web",
+    standalone: "installed",
+    fullscreen: "installed",
+    "minimal-ui": "installed",
+    unknown: "unknown",
+  };
+  return {
+    days,
+    sites: sites.map((s) => {
+      const mine = rows.filter((r) => r.siteId === s.id);
+      const surfaces = mine
+        .map((r) => ({
+          mode: r.mode,
+          kind: KIND[r.mode] ?? "unknown",
+          events: r.events,
+          visitors: r.visitors,
+          identified: r.identified,
+          lastSeen: r.lastSeen,
+          priorEvents: r.priorEvents,
+          // Said here, once, rather than re-derived by every caller: it stopped
+          // if it used to report and now does not.
+          stopped: r.events === 0 && r.priorEvents > 0,
+        }))
+        .sort((a, b) => b.events - a.events);
+      return {
+        id: s.id,
+        name: s.name,
+        domain: s.domain,
+        trackingKey: s.trackingKey,
+        status: s.status,
+        surfaces,
+      };
+    }),
   };
 }
 

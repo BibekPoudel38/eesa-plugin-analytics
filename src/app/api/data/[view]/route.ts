@@ -1,6 +1,7 @@
 import { requireUi, requireSite, rangeParam } from "@/lib/eesa/api";
 import {
   getLiveStatus,
+  getSurfaces,
   getOverview,
   getHeatData,
   getSessionsData,
@@ -25,6 +26,16 @@ export async function GET(
     if (ctx instanceof Response) return ctx;
     const siteId = new URL(req.url).searchParams.get("site") || undefined;
     return Response.json(await getLiveStatus(ctx.tenantId, siteId));
+  }
+
+  // Tenant-level like `status`: the point is to compare every site and every
+  // surface at once, so requiring a site would defeat it.
+  if (view === "surfaces") {
+    const ctx = await requireUi(req);
+    if (ctx instanceof Response) return ctx;
+    const raw = Number(new URL(req.url).searchParams.get("days"));
+    const days = Number.isFinite(raw) && raw > 0 && raw <= 90 ? Math.floor(raw) : 7;
+    return Response.json(await getSurfaces(ctx.tenantId, days));
   }
 
   const scope = await requireSite(req);
