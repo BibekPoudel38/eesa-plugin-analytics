@@ -92,7 +92,25 @@ type SessionAgg = {
   converted: boolean;
 };
 
+/** Sessions, grouped once per array of events.
+ *
+ *  One page calls six or more of the aggregations below and every one of them
+ *  sessionizes first, so rendering the overview grouped 152,000 events into
+ *  8,000 sessions nine times over. The result depends only on the array, so it
+ *  is cached against it — a WeakMap, so nothing is held alive after the
+ *  request that loaded those events is done with them.
+ */
+const SESSION_CACHE = new WeakMap<StoredEvent[], SessionAgg[]>();
+
 function sessionize(events: StoredEvent[]): SessionAgg[] {
+  const hit = SESSION_CACHE.get(events);
+  if (hit) return hit;
+  const built = sessionizeUncached(events);
+  SESSION_CACHE.set(events, built);
+  return built;
+}
+
+function sessionizeUncached(events: StoredEvent[]): SessionAgg[] {
   const bySession = groupBy(events, (e) => e.sessionId);
   const out: SessionAgg[] = [];
   for (const [id, evts] of bySession) {
@@ -270,13 +288,19 @@ export function liveTopPages(evs?: StoredEvent[]): PageRow[] {
     (e) => e.path,
   );
 
+  // Sessions by id, built once. This was `sessions.find(...)` INSIDE the loop
+  // over pageviews below — a linear scan of 8,000 sessions for each of 75,000
+  // pageviews, around 600 million comparisons, and very nearly the entire cost
+  // of rendering the overview.
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
+
   const rows: PageRow[] = [];
   for (const [path, pvs] of byPath) {
     // dwell: time from each pageview to the next event in the same session
     let dwellTotal = 0;
     let dwellN = 0;
     for (const pv of pvs) {
-      const sess = sessions.find((s) => s.id === pv.sessionId);
+      const sess = sessionById.get(pv.sessionId);
       if (!sess) continue;
       const next = sess.events.find((e) => e.ts > pv.ts);
       if (next) {
