@@ -56,11 +56,13 @@ function ago(ms: number | null): string {
 
 /** A one-property split — delivery vs pickup, wallet vs card. */
 function Split({
-  title, rows, empty, suffix,
+  title, rows, empty, verbatim, suffix,
 }: {
   title: string;
   rows: { label: string; count: number; value: number }[];
   empty: string;
+  /** Coupon codes are literals people type — never re-case them. */
+  verbatim?: boolean;
   suffix?: (r: { label: string; count: number; value: number }) => string;
 }) {
   const total = rows.reduce((a, r) => a + r.count, 0);
@@ -73,7 +75,9 @@ function Split({
         <ul className="space-y-1.5">
           {rows.map((r) => (
             <li key={r.label} className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate text-foreground">{sentence(r.label)}</span>
+              <span className="truncate text-foreground">
+                {verbatim ? r.label : sentence(r.label)}
+              </span>
               <span className="shrink-0 tabular text-muted-foreground">
                 {suffix?.(r) || `${Math.round((r.count / (total || 1)) * 100)}%`}
                 <span className="ml-2 text-xs">{compactNumber(r.count)}</span>
@@ -241,7 +245,7 @@ export default async function MobileAppPage({
             {[
               { label: "Revenue", value: money(d.commerce.revenue), sub: `${compactNumber(d.commerce.orders)} orders placed` },
               { label: "Average order", value: d.commerce.orders ? money(d.commerce.revenue / d.commerce.orders) : "—", sub: d.commerce.avgItems ? `${d.commerce.avgItems.toFixed(1)} items \u00b7 ${compactNumber(d.commerce.buyers)} bought` : `${compactNumber(d.commerce.buyers)} people bought` },
-              { label: "Items added", value: compactNumber(d.commerce.itemsAdded), sub: "to baskets, from add_to_cart" },
+              { label: "Items added", value: compactNumber(d.commerce.itemsAdded), sub: `across ${compactNumber(d.commerce.cartedSessions)} baskets` },
               { label: "Discounts", value: d.commerce.discount ? money(d.commerce.discount) : "—", sub: `${compactNumber(d.commerce.coupons)} coupons applied` },
             ].map((t) => (
               <div key={t.label} className="rounded-xl border bg-card p-4">
@@ -431,7 +435,8 @@ export default async function MobileAppPage({
                     title="Coupons used"
                     rows={d.coupons}
                     empty=""
-                    suffix={(r) => (r.value ? `−${money(r.value)}` : "")}
+                    verbatim
+                    suffix={(r) => (r.value ? `−${money(r.value)}` : "no discount")}
                   />
                 )}
               </div>
@@ -476,7 +481,7 @@ export default async function MobileAppPage({
             <Panel className="lg:col-span-7">
               <PanelHead
                 title="Latest in the app"
-                sub="The most recent screens and taps, newest first"
+                sub="The most recent activity, newest first"
               />
               <div className="divide-y">
                 {d.activity.length ? (

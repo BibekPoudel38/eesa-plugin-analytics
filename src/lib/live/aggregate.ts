@@ -10,6 +10,7 @@ import type {
   EventRow,
   ActivityItem,
 } from "@/lib/mock/data";
+import { eventLabel } from "@/lib/vocab";
 
 /**
  * Turns the raw captured event stream into the same shapes the mock module
@@ -383,11 +384,13 @@ export function liveActivity(now = Date.now(), evs?: StoredEvent[]): ActivityIte
         : e.type === "click"
           ? "clicked"
           : e.type === "rageclick"
-            ? "rage-clicked"
+            ? "clicked in frustration"
             : e.type === "deadclick"
-              ? "dead-clicked"
+              ? "clicked something dead"
               : e.type === "custom"
-                ? e.name ?? "fired event"
+                // The client's own name for it — "place_order" — is not a
+                // phrase anyone reading this dashboard would use.
+                ? eventLabel(e.name ?? "")
                 : e.type === "scroll"
                   ? "scrolled"
                   : "left";
@@ -398,6 +401,7 @@ export function liveActivity(now = Date.now(), evs?: StoredEvent[]): ActivityIte
     return {
       id: `${e.sessionId}-${e.ts}-${i}`,
       user: shortId(e.visitorId),
+      userId: e.userId || undefined,
       action,
       target: target || e.path,
       minutesAgo: Math.max(0, (now - e.ts) / 60000),

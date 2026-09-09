@@ -264,6 +264,19 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     if (!byDevice.has(dev)) byDevice.set(dev, new Set());
     byDevice.get(dev)!.add(e.visitorId);
   }
+  // "user_9ju5 place_order" is true and useless to somebody running a
+  // restaurant. Only the dozen people in the feed are looked up, so this is one
+  // small request, and it degrades to the short id when the directory is down.
+  const activity = live.liveActivity(now, app);
+  const feedNames = await resolveCustomers(
+    tenantId, activity.map((a) => a.userId ?? "").filter(Boolean),
+  );
+  for (const item of activity) {
+    const name = item.userId ? feedNames[item.userId]?.name : "";
+    if (name) item.user = name;
+    else if (item.userId) item.user = item.userId;
+  }
+
   const rank = (m: Map<string, Set<string>>) =>
     [...m.entries()].map(([name, set]) => ({ name, value: set.size }))
       .sort((a, b) => b.value - a.value);
@@ -287,7 +300,7 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     // No locations here. The mobile client makes no request carrying geo, so
     // every app event is "Unknown" — the page says that in words now, and
     // grouping twenty thousand rows to prove it was a pass for nothing.
-    activity: live.liveActivity(now, app),
+    activity,
     platforms,
     devices,
     commerce,

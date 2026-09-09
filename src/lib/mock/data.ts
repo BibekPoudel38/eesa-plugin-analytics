@@ -173,6 +173,8 @@ export const locations = [
 export type ActivityItem = {
   id: string;
   user: string;
+  /** The site's own customer id, when the visitor had identified. */
+  userId?: string;
   action: string;
   target: string;
   minutesAgo: number;
