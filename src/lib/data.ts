@@ -16,6 +16,8 @@ import { recordingIdsFor } from "@/lib/live/recordings";
 import { listFunnels } from "@/lib/db/funnels";
 import { computeFunnel, computeRetention } from "@/lib/funnels/compute";
 import { computeGoalCards, type GoalCard } from "@/lib/goals/compute";
+import * as appdb from "./db/app";
+import { resolveCustomers } from "./eesa/directory";
 
 const DAY = 86_400_000;
 
@@ -143,6 +145,56 @@ export async function getSurfaces(tenantId: string, days = 7) {
  *  every aggregation below is the one the rest of the dashboard uses. A second
  *  set of app-only maths would be a second set to keep true.
  */
+/**
+ * The app's people, and everything the app reports about what they bought.
+ *
+ * Two sources, deliberately separate: the analytics database says what
+ * happened, and Eesa's directory says who it happened to. Neither can answer
+ * the other's question, and the directory half is optional — when it is
+ * unreachable every row still renders, keyed by the id it always had.
+ */
+export async function getAppPeople(
+  tenantId: string,
+  siteId: string,
+  range?: string,
+) {
+  const now = Date.now();
+  const since = now - rangeDays(range) * DAY;
+
+  const [people, commerce] = await Promise.all([
+    appdb.loadAppPeople(tenantId, siteId, since),
+    appdb.loadAppCommerce(tenantId, siteId, since),
+  ]);
+  const directory = await resolveCustomers(tenantId, people.map((p) => p.userId));
+
+  const rows = people.map((p) => ({ ...p, customer: directory[p.userId] ?? null }));
+  const named = rows.filter((r) => r.customer?.name).length;
+
+  // Where people are, from the directory — the events themselves carry no geo
+  // for the app at all (the mobile client posts server-side, so there is no
+  // browser request to enrich), which is why the shared location panel reads
+  // "Unknown" for every one of them.
+  const byCity = new Map<string, number>();
+  for (const r of rows) {
+    const city = r.customer?.city?.trim();
+    if (!city) continue;
+    byCity.set(city, (byCity.get(city) ?? 0) + 1);
+  }
+  const cities = [...byCity.entries()]
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    span: [since, now] as [number, number],
+    rows,
+    commerce,
+    cities,
+    named,
+    /** False when the directory answered nothing — worth saying on the page. */
+    directoryUp: Object.keys(directory).length > 0 || people.length === 0,
+  };
+}
+
 export async function getAppData(tenantId: string, siteId: string, range?: string) {
   const now = Date.now();
   const since = now - rangeDays(range) * DAY;
@@ -152,9 +204,20 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
   // JavaScript, which is why it took so long to open. The website's half is
   // now four integers from the database rather than 75,000 rows nothing on
   // this page ever reads again.
-  const [app, totals] = await Promise.all([
+  // The commerce half is what the app actually reports and nothing here read
+  // until now: every add_to_cart, payment_started, place_order and
+  // apply_coupon arrives with its properties attached. All aggregates, so the
+  // extra detail costs one round trip rather than another 20,000 rows.
+  const [app, totals, commerce, items, service, payment, coupons] = await Promise.all([
     loadEvents(tenantId, siteId, since, 200_000, "app"),
     loadSurfaceTotals(tenantId, siteId, since),
+    appdb.loadAppCommerce(tenantId, siteId, since),
+    appdb.loadAppItems(tenantId, siteId, since),
+    appdb.loadAppBreakdown(tenantId, siteId, since, "service_type"),
+    appdb.loadAppBreakdown(tenantId, siteId, since, "payment_kind"),
+    appdb.loadAppBreakdown(tenantId, siteId, since, "code", {
+      event: "apply_coupon", sum: "discount_amount", limit: 8,
+    }),
   ]);
   const span: [number, number] = [since, now];
 
@@ -190,6 +253,11 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     locations: live.liveLocations(app),
     activity: live.liveActivity(now, app),
     platforms,
+    commerce,
+    items,
+    service,
+    payment,
+    coupons,
   };
 }
 

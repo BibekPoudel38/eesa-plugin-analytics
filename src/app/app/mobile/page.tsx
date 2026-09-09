@@ -1,4 +1,5 @@
-import { Smartphone, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { MapPin, TriangleAlert } from "lucide-react";
 
 import { PageHeader, DeltaPill } from "@/components/app/primitives";
 import { Panel, PanelHead } from "@/components/app/panel";
@@ -33,6 +34,13 @@ export const dynamic = "force-dynamic";
 //: fourth palette nobody chose.
 const PLATFORM_COLOR = ["var(--ember)", "var(--teal)", "var(--violet)", "var(--muted-foreground)"];
 
+function money(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency", currency: "USD",
+    maximumFractionDigits: n >= 1000 ? 0 : 2,
+  });
+}
+
 function ago(ms: number | null): string {
   if (!ms) return "never";
   const mins = Math.round((Date.now() - ms) / 60000);
@@ -40,6 +48,40 @@ function ago(ms: number | null): string {
   if (mins < 60) return `${mins} min ago`;
   const h = Math.round(mins / 60);
   return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
+/** A one-property split — delivery vs pickup, wallet vs card. */
+function Split({
+  title, rows, empty, suffix,
+}: {
+  title: string;
+  rows: { label: string; count: number; value: number }[];
+  empty: string;
+  suffix?: (r: { label: string; count: number; value: number }) => string;
+}) {
+  const total = rows.reduce((a, r) => a + r.count, 0);
+  return (
+    <div>
+      <p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      {rows.length ? (
+        <ul className="space-y-1.5">
+          {rows.map((r) => (
+            <li key={r.label} className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="truncate text-foreground">{r.label.replace(/_/g, " ")}</span>
+              <span className="shrink-0 tabular text-muted-foreground">
+                {suffix?.(r) || `${Math.round((r.count / (total || 1)) * 100)}%`}
+                <span className="ml-2 text-xs">{compactNumber(r.count)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        empty && <p className="text-sm text-muted-foreground">{empty}</p>
+      )}
+    </div>
+  );
 }
 
 export default async function MobileAppPage({
@@ -104,6 +146,24 @@ export default async function MobileAppPage({
               .map((k) => (
                 <KpiCard key={k.key} kpi={k} />
               ))}
+          </div>
+
+          {/* What the app reports that a website tracker never would. Every
+              figure below comes from a property the client already attaches to
+              its own events — nothing here was read until now. */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {[
+              { label: "Revenue", value: money(d.commerce.revenue), sub: `${compactNumber(d.commerce.orders)} orders placed` },
+              { label: "Average order", value: d.commerce.orders ? money(d.commerce.revenue / d.commerce.orders) : "—", sub: `${compactNumber(d.commerce.buyers)} people bought` },
+              { label: "Items added", value: compactNumber(d.commerce.itemsAdded), sub: "to baskets, from add_to_cart" },
+              { label: "Discounts", value: d.commerce.discount ? money(d.commerce.discount) : "—", sub: `${compactNumber(d.commerce.coupons)} coupons applied` },
+            ].map((t) => (
+              <div key={t.label} className="rounded-xl border bg-card p-4">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</p>
+                <p className="mt-1 text-2xl font-semibold tabular text-foreground">{t.value}</p>
+                <p className="text-xs text-muted-foreground">{t.sub}</p>
+              </div>
+            ))}
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -207,27 +267,103 @@ export default async function MobileAppPage({
               </div>
             </Panel>
           </div>
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-            <Panel className="lg:col-span-5">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+            <Panel>
               <PanelHead
-                title="Where the app is used"
-                sub="People, by the place the request came from"
+                title="Basket to order"
+                sub="Sessions that reached each step, from the app's own events"
               />
+              <div className="space-y-3 p-5">
+                {[
+                  { label: "Added to basket", n: d.commerce.cartedSessions },
+                  { label: "Started payment", n: d.commerce.paymentSessions },
+                  { label: "Placed the order", n: d.commerce.orderedSessions },
+                ].map((step) => {
+                  const top = d.commerce.cartedSessions || 1;
+                  return (
+                    <div key={step.label}>
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="text-foreground">{step.label}</span>
+                        <span className="tabular text-muted-foreground">
+                          {compactNumber(step.n)}
+                          <span className="ml-2 text-xs">
+                            {Math.round((step.n / top) * 100)}%
+                          </span>
+                        </span>
+                      </div>
+                      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-[var(--ember)]"
+                          style={{ width: `${Math.min((step.n / top) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                {!d.commerce.cartedSessions && (
+                  <p className="text-sm text-muted-foreground">
+                    No baskets in this window.
+                  </p>
+                )}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHead title="Menu" sub="What goes in the basket, from add_to_cart" />
               <div className="p-5">
-                {d.locations.length ? (
+                {d.items.length ? (
                   <BarList
-                    items={d.locations.map((l) => ({
-                      label: l.name,
-                      value: l.value,
-                      color: l.color,
+                    items={d.items.slice(0, 8).map((i) => ({
+                      label: i.name,
+                      value: i.adds,
+                      sub: i.price ? money(i.price) : undefined,
                     }))}
                     valueFormatter={compactNumber}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No location reported yet.
+                    Nothing added to a basket in this window.
                   </p>
                 )}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHead title="How they order" sub="Service and payment, as the app reports them" />
+              <div className="space-y-4 p-5">
+                <Split title="Delivery or pickup" rows={d.service} empty="No service type reported." />
+                <Split title="Paid with" rows={d.payment} empty="No payment method reported." />
+                {d.coupons.length > 0 && (
+                  <Split
+                    title="Coupons used"
+                    rows={d.coupons}
+                    empty=""
+                    suffix={(r) => (r.value ? `−${money(r.value)}` : "")}
+                  />
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            <Panel className="lg:col-span-5">
+              <PanelHead
+                title="Where the app is used"
+                sub="The app's events carry no location — see People"
+              />
+              <div className="flex gap-3 p-5 text-sm text-muted-foreground">
+                <MapPin className="mt-0.5 size-4 shrink-0" />
+                <p>
+                  Location on this dashboard is enriched from the request the
+                  browser makes, and the mobile client does not make one that
+                  carries it — so every app event is placed &quot;Unknown&quot;
+                  no matter where it came from. The{" "}
+                  <Link href="/app/people" className="font-medium text-foreground underline underline-offset-2">
+                    People
+                  </Link>{" "}
+                  page shows where signed-in customers are instead, read from
+                  your own customer records.
+                </p>
               </div>
             </Panel>
 

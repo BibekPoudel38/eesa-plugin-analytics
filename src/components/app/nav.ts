@@ -1,4 +1,4 @@
-import { Clapperboard, Code2, Filter, Goal, LayoutGrid, Radio, Smartphone, Target, Users, type LucideIcon } from "lucide-react";
+import { Clapperboard, Code2, Contact, Filter, Goal, LayoutGrid, Radio, Smartphone, Target, Users, type LucideIcon } from "lucide-react";
 
 export type NavItem = {
   href: string;
@@ -13,6 +13,7 @@ export const navItems: NavItem[] = [
   { href: "/app", label: "Overview", icon: LayoutGrid, hint: "Traffic & health at a glance" },
   { href: "/app/surfaces", label: "Web & app", icon: Radio, hint: "Which surface the traffic came from" },
   { href: "/app/mobile", label: "App", icon: Smartphone, hint: "Everything the mobile app reports" },
+  { href: "/app/people", label: "People", icon: Contact, hint: "Who is using the app, by name" },
   { href: "/app/visitors", label: "Visitors", icon: Users, hint: "Everyone who's visited, with replays" },
   { href: "/app/heatmaps", label: "Heatmaps", icon: Target, hint: "Where clicks & attention pool" },
   { href: "/app/sessions", label: "Sessions", icon: Clapperboard, hint: "Replay real visits" },
