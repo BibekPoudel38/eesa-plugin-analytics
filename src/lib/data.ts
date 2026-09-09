@@ -152,7 +152,11 @@ export async function getAppData(tenantId: string, siteId: string, range?: strin
     events: list.length,
     visitors: new Set(list.map((e) => e.visitorId)).size,
     sessions: new Set(list.map((e) => e.sessionId)).size,
-    identified: new Set(list.filter((e) => e.userId).map((e) => e.userId)).size,
+    // Visitors who have identified, over visitors. Counting distinct USER ids
+    // against distinct VISITOR ids — the first version — divided two different
+    // populations by each other and produced a percentage of nothing: the same
+    // person on a phone and a laptop is two visitors and one user id.
+    identified: new Set(list.filter((e) => e.userId).map((e) => e.visitorId)).size,
   });
 
   // iOS vs Android, from the os the client reports. Counted over VISITORS

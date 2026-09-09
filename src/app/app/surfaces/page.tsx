@@ -7,6 +7,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { AreaChart } from "@/components/charts/area-chart";
 import { BarList } from "@/components/charts/bar-list";
 import { Donut } from "@/components/charts/donut";
+import { DataBadge } from "@/components/app/data-badge";
 import { NoSite } from "@/components/app/no-site";
 import { getAppData } from "@/lib/data";
 import { compactNumber, duration } from "@/lib/format";
@@ -52,6 +53,9 @@ function Compare({
   totals: { events: number; visitors: number; sessions: number; identified: number };
   accent: string;
 }) {
+  // People who have identified, over people. Both halves are visitors, so the
+  // percentage is of something real — and the counts are shown beneath it so
+  // nobody has to take the ratio on trust.
   const signedIn = totals.visitors
     ? Math.round((totals.identified / totals.visitors) * 100)
     : 0;
@@ -61,22 +65,34 @@ function Compare({
         <Icon className="size-4" style={{ color: accent }} />
         {label}
       </span>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div>
           <Eyebrow>Events</Eyebrow>
           <p className="tabular font-display text-lg font-bold">
             {compactNumber(totals.events)}
           </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">screens &amp; taps</p>
+        </div>
+        <div>
+          <Eyebrow>Sessions</Eyebrow>
+          <p className="tabular font-display text-lg font-bold">
+            {compactNumber(totals.sessions)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">visits</p>
         </div>
         <div>
           <Eyebrow>Visitors</Eyebrow>
           <p className="tabular font-display text-lg font-bold">
             {compactNumber(totals.visitors)}
           </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">people</p>
         </div>
         <div>
           <Eyebrow>Signed in</Eyebrow>
           <p className="tabular font-display text-lg font-bold">{signedIn}%</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {compactNumber(totals.identified)} of {compactNumber(totals.visitors)}
+          </p>
         </div>
       </div>
     </div>
@@ -102,9 +118,12 @@ export default async function AppSurfacePage({
         title="Web &amp; app"
         description="The app and the website share one tracking key, so the funnel stays whole. This is the only page that separates them again."
         actions={
-          <span className="text-xs text-muted-foreground">
-            app last reported {ago(d.lastSeen)}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              app last reported {ago(d.lastSeen)}
+            </span>
+            <DataBadge live={d.hasApp} eventCount={d.app.events} />
+          </div>
         }
       />
 

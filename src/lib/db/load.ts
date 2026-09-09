@@ -211,7 +211,14 @@ export interface SurfaceRow {
   kind: string;
   events: number;
   visitors: number;
-  identified: number;    // events carrying a user id — identify() working
+  /** Visitors who have identified — NOT events carrying an id.
+   *
+   *  Counted over people because that is what the label claims. Events were
+   *  the first attempt and read very differently: one signed-in customer
+   *  browsing forty screens moved the figure more than forty signed-out ones,
+   *  so "29% signed in" described how chatty the identified were rather than
+   *  how many people they were. */
+  identified: number;
   lastSeen: string | null;
   priorEvents: number;   // the window before this one
 }
@@ -240,7 +247,7 @@ export async function loadSurfaces(
               ${KIND}                                   as kind,
               count(*)                                  as events,
               count(distinct visitor_id)                as visitors,
-              count(*) filter (where user_id <> '')     as identified,
+              count(distinct visitor_id) filter (where user_id <> '') as identified,
               max(ts)                                   as last_seen
          from events
         where tenant_id = $1 and ts >= $2
