@@ -93,26 +93,16 @@ export async function getSurfaces(tenantId: string, days = 7) {
     listSites(tenantId),
     loadSurfaces(tenantId, since),
   ]);
-  // Raw display_mode is a CSS media feature plus one value the app invents, so
-  // it is grouped into things a person recognises. Unknown is kept visible
-  // rather than folded into the website: it is old-tracker traffic, and hiding
-  // it would overstate how much of the site is actually reporting properly.
-  const KIND: Record<string, string> = {
-    app: "app",
-    browser: "web",
-    standalone: "installed",
-    fullscreen: "installed",
-    "minimal-ui": "installed",
-    unknown: "unknown",
-  };
+  // Unknown is kept visible rather than folded into the website: it is
+  // old-tracker traffic, and hiding it would overstate how much of the site is
+  // reporting properly.
   return {
     days,
     sites: sites.map((s) => {
       const mine = rows.filter((r) => r.siteId === s.id);
       const surfaces = mine
         .map((r) => ({
-          mode: r.mode,
-          kind: KIND[r.mode] ?? "unknown",
+          kind: r.kind,
           events: r.events,
           visitors: r.visitors,
           identified: r.identified,

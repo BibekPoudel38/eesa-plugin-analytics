@@ -198,7 +198,11 @@ export async function loadRecentEvents(
  */
 export interface SurfaceRow {
   siteId: string;
-  mode: string;          // raw display_mode: app | browser | standalone | …
+  /** app | web | installed | unknown — the surface, not the raw display_mode.
+   *  Grouped in SQL rather than in JS: `standalone` and `fullscreen` are both
+   *  an installed web app, and folding them afterwards would double-count a
+   *  visitor who used both, since distinct counts do not add. */
+  kind: string;
   events: number;
   visitors: number;
   identified: number;    // events carrying a user id — identify() working
@@ -212,13 +216,22 @@ export async function loadSurfaces(
 ): Promise<SurfaceRow[]> {
   const since = new Date(sinceMs);
   const prior = new Date(sinceMs - (Date.now() - sinceMs));
+  // display_mode is a CSS media feature plus the one value the app invents.
+  // Collapsed to a surface here so the grouping — and therefore the distinct
+  // visitor count — is done once, by the database.
+  const KIND = `case
+      when display_mode = 'app' then 'app'
+      when display_mode = 'browser' then 'web'
+      when display_mode in ('standalone', 'fullscreen', 'minimal-ui') then 'installed'
+      else 'unknown'
+    end`;
   const rows = await query<{
-    site_id: string; mode: string; events: string; visitors: string;
+    site_id: string; kind: string; events: string; visitors: string;
     identified: string; last_seen: Date | null; prior_events: string;
   }>(
     `with cur as (
        select site_id,
-              coalesce(nullif(display_mode, ''), 'unknown') as mode,
+              ${KIND}                                   as kind,
               count(*)                                  as events,
               count(distinct visitor_id)                as visitors,
               count(*) filter (where user_id <> '')     as identified,
@@ -228,7 +241,7 @@ export async function loadSurfaces(
         group by 1, 2
      ), prev as (
        select site_id,
-              coalesce(nullif(display_mode, ''), 'unknown') as mode,
+              ${KIND} as kind,
               count(*) as prior_events
          from events
         where tenant_id = $1 and ts >= $3 and ts < $2
@@ -237,20 +250,20 @@ export async function loadSurfaces(
      -- FULL OUTER: a surface present in only one window is exactly the
      -- interesting case. An inner join would hide the one that stopped.
      select coalesce(c.site_id, p.site_id)                as site_id,
-            coalesce(c.mode, p.mode)                      as mode,
+            coalesce(c.kind, p.kind)                      as kind,
             coalesce(c.events, 0)                         as events,
             coalesce(c.visitors, 0)                       as visitors,
             coalesce(c.identified, 0)                     as identified,
             c.last_seen                                   as last_seen,
             coalesce(p.prior_events, 0)                   as prior_events
        from cur c
-       full outer join prev p on p.site_id = c.site_id and p.mode = c.mode`,
+       full outer join prev p on p.site_id = c.site_id and p.kind = c.kind`,
     [tenantId, since, prior],
   );
   // bigints arrive as strings — see loadCounts.
   return rows.map((r) => ({
     siteId: String(r.site_id),
-    mode: r.mode,
+    kind: r.kind,
     events: Number(r.events ?? 0),
     visitors: Number(r.visitors ?? 0),
     identified: Number(r.identified ?? 0),
