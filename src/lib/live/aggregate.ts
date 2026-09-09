@@ -420,11 +420,36 @@ export function liveHeatPages(evs?: StoredEvent[]): HeatPage[] {
     (e) => e.path,
   );
 
+  // Everything the loop below needs, grouped ONCE.
+  //
+  // It used to scan all 152,000 events twice and all 8,000 sessions once for
+  // EVERY distinct path — a few hundred paths, so tens of millions of
+  // comparisons per filter, and almost the whole cost of the heatmaps page.
+  // Each of these is one pass instead.
+  const clicksByPath = groupBy(
+    events.filter(
+      (e) => clickTypes.has(e.type) && e.x != null && e.y != null,
+    ),
+    (e) => e.path,
+  );
+  const depthsByPath = groupBy(
+    events.filter((e) => e.type === "scroll" && e.depth != null),
+    (e) => e.path,
+  );
+  const sessionsByPath = new Map<string, SessionAgg[]>();
+  for (const sess of sessions) {
+    // A session lands under each path it visited, so the lookup below is a
+    // read rather than a scan with an `includes` inside it.
+    for (const p of new Set(sess.paths)) {
+      const list = sessionsByPath.get(p);
+      if (list) list.push(sess);
+      else sessionsByPath.set(p, [sess]);
+    }
+  }
+
   const pages: HeatPage[] = [];
   for (const [path, pvs] of byPath) {
-    const clicks = events.filter(
-      (e) => e.path === path && clickTypes.has(e.type) && e.x != null && e.y != null,
-    );
+    const clicks = clicksByPath.get(path) ?? [];
 
     // grid-cluster clicks into hotspots
     const cells = new Map<string, { x: number; y: number; n: number; label?: string }>();
@@ -469,10 +494,8 @@ export function liveHeatPages(evs?: StoredEvent[]): HeatPage[] {
       }));
 
     // scroll depth → reach at 0/25/50/75/100
-    const entrySessions = sessions.filter((s) => s.paths.includes(path));
-    const depths = events
-      .filter((e) => e.path === path && e.type === "scroll" && e.depth != null)
-      .map((e) => e.depth as number);
+    const entrySessions = sessionsByPath.get(path) ?? [];
+    const depths = (depthsByPath.get(path) ?? []).map((e) => e.depth as number);
     const reachAt = (d: number) =>
       depths.length ? Math.round((depths.filter((x) => x >= d).length / depths.length) * 100) : 0;
     const scrollBands = [100, reachAt(25), reachAt(50), reachAt(75), reachAt(100)];
