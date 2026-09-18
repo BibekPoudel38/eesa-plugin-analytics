@@ -29,11 +29,18 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export default async function SessionReplayPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
-  const scope = await currentScope();
+  // `?site=` makes this page deep-linkable. A link built elsewhere — Eesa's
+  // Customer 360 screen, or one pasted to a colleague — knows which site the
+  // session belongs to; without honouring it the page falls back to whatever
+  // site THAT reader's cookie holds and reports the session as not found.
+  const wanted = (await searchParams).site;
+  const scope = await currentScope(typeof wanted === "string" ? wanted : undefined);
   const session = scope.site
     ? await getSessionDetail(scope.tenantId, scope.site.id, id)
     : null;

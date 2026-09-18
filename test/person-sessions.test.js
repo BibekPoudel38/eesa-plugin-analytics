@@ -112,3 +112,48 @@ test("the manifest advertises it, or Eesa will never offer it", () => {
     "declared in the route but not in the manifest: the gateway lists tools "
       + "from the manifest, so it would be invisible to Eesa");
 });
+
+// ---------------------------------------------------------------------------
+// What the Customer 360 panel needs on top of the session list
+// ---------------------------------------------------------------------------
+
+test("a session says WHEN it happened, not just how long ago", () => {
+  // The panel sits beside this customer's order history. "42 minutes ago"
+  // cannot be lined up against an order timestamp without the reader knowing
+  // when the server computed it, and every caller reconstructing it from
+  // startedMinutesAgo would do so with its own clock skew.
+  assert.ok(/startedAt:\s*s\.firstTs/.test(agg) && /endedAt:\s*s\.lastTs/.test(agg),
+    "sessionsForUser should carry the absolute span, which the aggregate has");
+  const handler = mcp.slice(mcp.indexOf('if (name === "person_sessions")'));
+  assert.ok(/startedAt: r\.startedAt/.test(handler.slice(0, 3000)),
+    "the tool should pass the absolute start through");
+});
+
+test("the replay link is built where the origin is known", () => {
+  // The plugin knows its own address; the calling app does not, and hardcoding
+  // it there means a link that breaks on every other deployment.
+  assert.ok(/function publicOrigin\(/.test(mcp), "no origin helper");
+  assert.ok(/x-forwarded-host/.test(mcp),
+    "behind a proxy req.url is the internal container address, so a link built "
+    + "from it opens nothing from a browser");
+  assert.ok(/callTool\(ctx, name, args, publicOrigin\(req\)\)/.test(mcp),
+    "the origin must actually reach callTool");
+});
+
+test("a replay link is only offered when there is a replay", () => {
+  // A Watch button that opens "no recording for this session" is worse than no
+  // button: somebody clicks it twice and reports the player as broken.
+  const handler = mcp.slice(mcp.indexOf('if (name === "person_sessions")'));
+  const link = handler.slice(handler.indexOf("replayUrl:"), handler.indexOf("outcome: r.outcome"));
+  assert.ok(/r\.hasRecording/.test(link) && /r\.replayId/.test(link) && /origin/.test(link),
+    "replayUrl should require a recording, an id and a known origin");
+  assert.ok(/:\s*null/.test(link), "and be null otherwise, not an empty string");
+});
+
+test("the replay link carries the site, because the player requires it", () => {
+  // /api/rec/[id] is tenant+site scoped; the player passes `site` through and
+  // 400s without it, showing "couldn't load the replay engine" with no clue why.
+  const handler = mcp.slice(mcp.indexOf('if (name === "person_sessions")'));
+  assert.ok(/site=\$\{encodeURIComponent\(site\.id\)\}/.test(handler.slice(0, 3000)),
+    "the watch URL needs ?site=");
+});

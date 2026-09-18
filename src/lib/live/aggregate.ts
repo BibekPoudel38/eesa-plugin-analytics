@@ -599,19 +599,28 @@ export function liveSessions(
  * match is exact and case-insensitive: these are ids, not names, and a prefix
  * match would let CUS-1 answer for CUS-1042.
  */
+/** A session row that also says WHEN, in absolute terms. */
+export type PersonSessionRow = SessionRow & { startedAt: number; endedAt: number };
+
 export function sessionsForUser(
   userId: string,
   now = Date.now(),
   evs?: StoredEvent[],
   recIds: Set<string> = new Set(),
   limit = 25,
-): SessionRow[] {
+): PersonSessionRow[] {
   const want = String(userId || "").trim().toLowerCase();
   if (!want) return [];
   return sessionize(evs ?? allEvents())
     .filter((s) => (s.userId || "").trim().toLowerCase() === want)
     .slice(0, Math.max(1, limit))
-    .map((s) => toRow(s, recIds, now));
+    // `startedAt`/`endedAt` rather than only `startedMinutesAgo`. A support
+    // agent reads these beside an order timestamp — "was this the visit where
+    // they tried to pay?" — and an elapsed figure cannot answer that without
+    // the reader knowing exactly when the server computed it. The absolute
+    // times are already on the aggregate; withholding them only forced every
+    // caller to reconstruct them, each with its own clock skew.
+    .map((s) => ({ ...toRow(s, recIds, now), startedAt: s.firstTs, endedAt: s.lastTs }));
 }
 
 export function liveSessionDetail(
