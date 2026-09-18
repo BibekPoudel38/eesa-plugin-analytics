@@ -216,8 +216,22 @@ create table if not exists goals (
 create index if not exists goals_tenant_site_idx on goals (tenant_id, site_id, position);
 
 -- ---------------------------------------------------------------------------
--- Session-replay pointers (P4). Blobs live in object storage (MinIO/S3);
--- this table only points at them so a replay can be located + retention run.
+-- Session replay — one summary row per recorded session, and the rrweb events
+-- themselves in `recording_chunks` below.
+--
+-- WHY THIS IS IN POSTGRES AND NOT REDIS
+-- Replays used to live in Redis behind a cap of the 60 most recent sessions
+-- PER SITE. That is a count, not a duration: on a site with real traffic the
+-- sessions list went back weeks while the replays behind it went back hours,
+-- so almost every session anybody opened said "no recording" and read as a
+-- broken player. Redis is also a cache — an eviction, a restart or a plan
+-- change loses the lot, which is the wrong promise for the most valuable
+-- artefact this plugin produces.
+--
+-- `object_key` is a leftover from the original P4 design, where the blobs were
+-- to live in MinIO/S3. That would have meant a bucket, credentials and a
+-- lifecycle policy to provision before replay worked at all; the events are
+-- gzipped bytea here instead, in the database the plugin already owns.
 -- ---------------------------------------------------------------------------
 create table if not exists recordings (
     id           uuid primary key default gen_random_uuid(),
@@ -233,6 +247,54 @@ create table if not exists recordings (
     unique (tenant_id, site_id, session_id)
 );
 create index if not exists recordings_tenant_site_idx on recordings (tenant_id, site_id, started_at desc);
+
+-- The table predates the move off object storage; these run on an existing
+-- deployment as well as a fresh one.
+alter table recordings alter column object_key set default '';
+alter table recordings add column if not exists page        text        not null default '';
+alter table recordings add column if not exists first_ts    bigint      not null default 0;
+alter table recordings add column if not exists last_ts     bigint      not null default 0;
+alter table recordings add column if not exists event_count integer     not null default 0;
+alter table recordings add column if not exists updated_at  timestamptz not null default now();
+
+-- ---------------------------------------------------------------------------
+-- The replay itself. One row per POSTed chunk (the recorder flushes every few
+-- seconds), holding a gzipped JSON array of rrweb events.
+--
+-- bytea + gzip rather than jsonb: nothing ever queries INSIDE a replay — it is
+-- read whole, by session, and handed to the player — so the only thing the
+-- database can do with structure here is spend space on it. rrweb output is
+-- extremely repetitive DOM text and compresses by roughly an order of
+-- magnitude, which is the difference between a year of replays being routine
+-- and being a capacity problem.
+--
+-- A hypertable so retention is a chunk DROP rather than a mass DELETE:
+-- deleting a year of replays row by row would bloat the table and then need a
+-- VACUUM FULL to give the space back.
+-- ---------------------------------------------------------------------------
+create table if not exists recording_chunks (
+    tenant_id   text        not null,
+    site_id     uuid        not null,
+    session_id  text        not null,
+    created_at  timestamptz not null default now(),   -- partitioning column
+    n_events    integer     not null default 0,
+    size_bytes  integer     not null default 0,       -- compressed
+    events      bytea       not null                  -- gzip(JSON array)
+);
+select create_hypertable('recording_chunks', 'created_at',
+                         chunk_time_interval => interval '7 days',
+                         if_not_exists => true);
+create index if not exists recording_chunks_session_idx
+    on recording_chunks (tenant_id, site_id, session_id, created_at);
+
+do $$
+begin
+    -- 400 days, not 365: "keep it for a year" has to survive the day the
+    -- policy runs, a late backfill and a leap year without silently becoming
+    -- "eleven months and change".
+    perform add_retention_policy('recording_chunks', interval '400 days');
+exception when others then null; -- policy already exists
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Members — plugin-owned role membership (v1: admin only), mirrors documents.

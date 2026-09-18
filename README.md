@@ -151,11 +151,28 @@ database before first boot.
 | `identities` | Visitor→user links. What makes `identify()` reach backwards |
 | `funnels` | Tenant-defined funnel step definitions |
 | `goals` | Tenant-defined conversions |
-| `recordings` | Session-replay metadata (rrweb) |
+| `recordings` | One row per recorded session: device, page, span, event count |
+| `recording_chunks` | The rrweb events themselves, gzipped. **Hypertable**, 400-day retention |
 | `members` | Local mirror of the Eesa-assigned role |
 
 Every table is keyed by `tenant_id`, and every query is scoped by the tenant
 resolved from the caller's token.
+
+### How long things are kept
+
+| Data | Kept for | Enforced by |
+|---|---|---|
+| Raw events (visits, clicks, journeys) | 90 days | Timescale retention policy on `events` |
+| Hourly rollups | Indefinitely | `events_hourly` continuous aggregate |
+| Session replays | 400 days | Timescale retention policy on `recording_chunks` |
+
+Replay retention is a DURATION, not a count. It used to be "the 60 most recent
+sessions per site", held in Redis — and because visits are kept for 90 days,
+the sessions list went back weeks while the replays behind it went back hours.
+Nearly every session anybody opened said "no recording" and read as a broken
+player. `RETENTION_DAYS` in `src/lib/live/recording-limits.ts` must match the
+policy in `db/schema.sql`; a test asserts it, because a disagreement shows up
+as a Watch button that plays nothing.
 
 ---
 
@@ -208,7 +225,7 @@ plugin cannot override its own auth contract.
 | `PG_POOL_MAX` | Pool ceiling (default `10`) |
 | `EESA_FRAME_ANCESTORS` | Origins allowed to frame the dashboard |
 | `UPSTASH_REDIS_REST_*` | Optional live "active now" plane |
-| `S3_*` | Session-replay object storage (reserved) |
+| `S3_*` | Unused. Replays live in Postgres — see `db/schema.sql` |
 | `PLUGIN_ENC_KEY` | AES-256-GCM key for secrets at rest (reserved) |
 
 ---
@@ -256,10 +273,11 @@ broken plugin.
 
 **Working end to end:** the tracking snippet, event ingest, session-replay
 capture (rrweb), live dashboards over real data, tenant-defined funnels and
-goals, the three MCP tools, and the role probe.
+goals, the four MCP tools, and the role probe.
 
-**Reserved, not yet wired:** S3 replay storage (`S3_*` blank), the Upstash live
-plane (optional), and `PLUGIN_ENC_KEY`.
+**Reserved, not yet wired:** the Upstash live plane (optional) and
+`PLUGIN_ENC_KEY`. `S3_*` is dead: replays were moved into Postgres rather than
+requiring a bucket, credentials and a lifecycle policy before replay worked.
 
 ---
 
