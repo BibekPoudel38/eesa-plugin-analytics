@@ -1,5 +1,6 @@
 import "server-only";
 import { redisClient } from "./store";
+import { MAX_RECORDINGS } from "./recording-limits";
 
 /**
  * Store for rrweb session recordings.
@@ -46,7 +47,7 @@ export type Recording = {
   events: RRWebEvent[];
 };
 
-const MAX_RECORDINGS = 60; // per site
+export { MAX_RECORDINGS };
 const MAX_EVENTS_PER = 8000;
 
 // A tenant id or site id containing ':' would let one scope forge another's
