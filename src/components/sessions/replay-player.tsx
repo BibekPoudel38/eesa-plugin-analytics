@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Play, Pause, Film, Maximize2, Minimize2, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MAX_RECORDINGS } from "@/lib/live/recording-limits";
 
 type Meta = { device: string; page: string; firstTs: number; lastTs: number };
 type Status = "loading" | "ready" | "empty" | "error";
@@ -240,8 +241,14 @@ export function ReplayPlayer({ id, siteId }: { id: string; siteId: string }) {
               <div className="max-w-sm space-y-1 px-6">
                 <p className="font-medium text-foreground">No recording for this session</p>
                 <p className="text-sm text-muted-foreground">
-                  Replays are captured live by eesa-analytics.js. Demo sessions and very
-                  short visits don&apos;t have one.
+                  Only the last {MAX_RECORDINGS} visits to this site keep a replay — a
+                  recording is every pixel of every page, so it is far bigger than the
+                  visit itself. Visits and journeys are kept for 90 days, so older
+                  sessions still appear in the list with their replay already expired.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  A visit that lasted a second or two, or one from before replay was
+                  switched on for this site, never had one.
                 </p>
               </div>
             )}
