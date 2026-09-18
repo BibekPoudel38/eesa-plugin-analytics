@@ -30,17 +30,16 @@ export async function GET(
   if (!rec) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
-  // Chunks can arrive out of order (async POSTs); rrweb needs strict time order
-  // with Meta/FullSnapshot first, so sort by event timestamp before replay.
-  const events = [...rec.events].sort(
-    (a, b) => ((a.timestamp as number) ?? 0) - ((b.timestamp as number) ?? 0),
-  );
+  // Events arrive here already in playable order — chunks race, so the store
+  // sorts by the events' own timestamps in lib/live/recording-codec.ts. Doing
+  // it again here would be a second, drifting copy of a rule rrweb is strict
+  // about (Meta and FullSnapshot first, or the Replayer renders a blank frame).
   return Response.json({
     sessionId: rec.sessionId,
     device: rec.device,
     page: rec.page,
     firstTs: rec.firstTs,
     lastTs: rec.lastTs,
-    events,
+    events: rec.events,
   });
 }

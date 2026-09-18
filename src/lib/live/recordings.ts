@@ -1,6 +1,8 @@
 import "server-only";
-import { redisClient } from "./store";
-import { MAX_RECORDINGS } from "./recording-limits";
+import { query, tx } from "../db/pool";
+import { MAX_EVENTS_PER, RETENTION_DAYS } from "./recording-limits";
+import { chunkBounds, orderEvents, packChunk, unpackChunk } from "./recording-codec";
+import type { RRWebEvent } from "./recording-codec";
 
 /**
  * Store for rrweb session recordings.
@@ -14,22 +16,25 @@ import { MAX_RECORDINGS } from "./recording-limits";
  * replay is the most sensitive data this plugin holds; it is literally a video
  * of someone using a website.
  *
- * Two backends, chosen at runtime:
- *  • Redis (Upstash) — production, shared across instances.
- *  • In-memory Map — local dev only. Dies with the process, so replay is not
- *    usable in production without UPSTASH_REDIS_REST_URL/_TOKEN.
+ * WHY THIS IS POSTGRES AND NOT REDIS
+ * This used to be Redis, capped at the 60 most recent sessions PER SITE. That
+ * cap is a COUNT, not a duration, and the two are not close: visits live in
+ * Postgres for 90 days, so on a site with real traffic the sessions list went
+ * back weeks while the replays behind it went back hours. Practically every
+ * session anybody opened said "no recording", and read as a broken player
+ * rather than as a store that had already thrown the recording away.
  *
- * Caps are PER SITE, so one busy site cannot evict another's replays.
+ * Redis is also the wrong promise. It is a cache: an eviction, a restart, a
+ * plan change or a missing credential loses everything in it, and the fallback
+ * when the credential WAS missing was an in-process Map that died on every
+ * deploy. Replays are now kept for {@link RETENTION_DAYS} days in the database
+ * the plugin already owns, with no count cap at all — the limit is time, which
+ * is the thing people actually reason about.
  *
- * There is no synchronous "does this session have a recording" mirror any more.
- * It existed to be read from inside the pure aggregators, needed a
- * `hydrateRecordings()` call per request to not be stale, and could not express
- * a tenant scope. Callers now await `recordingIdsFor(tenant, site)` and pass the
- * result in — one less way to read the wrong tenant's state.
+ * The per-session {@link MAX_EVENTS_PER} cap stays. It is not storage policy;
+ * it stops one runaway page — an animation loop, a badly-behaved third-party
+ * script — from writing an unbounded recording.
  */
-
-// rrweb events are structurally complex; we don't need their shape here.
-type RRWebEvent = Record<string, unknown>;
 
 export interface RecordingScope {
   tenantId: string;
@@ -47,49 +52,24 @@ export type Recording = {
   events: RRWebEvent[];
 };
 
-export { MAX_RECORDINGS };
-const MAX_EVENTS_PER = 8000;
-
-// A tenant id or site id containing ':' would let one scope forge another's
-// key prefix. They are a UUID and an Eesa tenant id, but this is the one place
-// where being wrong is a cross-tenant read, so it is enforced rather than
-// assumed.
-const seg = (v: string) => encodeURIComponent(String(v ?? "")).replace(/%/g, "_");
-const scopeKey = (s: RecordingScope) => `${seg(s.tenantId)}:${seg(s.siteId)}`;
-
-const RKEY = (s: RecordingScope, sid: string) => `eesa:rec:${scopeKey(s)}:${seg(sid)}`;
-const MKEY = (s: RecordingScope, sid: string) => `eesa:recmeta:${scopeKey(s)}:${seg(sid)}`;
-const IDS = (s: RecordingScope) => `eesa:rec:ids:${scopeKey(s)}`;
-const RECENCY = (s: RecordingScope) => `eesa:rec:recency:${scopeKey(s)}`;
-
-// ---- in-memory backend (dev) ----------------------------------------------
-
-type RecState = { map: Map<string, Recording> };
-const g = globalThis as unknown as { __eesaRec?: RecState };
-function state(): RecState {
-  if (!g.__eesaRec) g.__eesaRec = { map: new Map() };
-  return g.__eesaRec;
-}
-/** Memory keys carry the scope too, so dev mirrors production isolation. */
-const memKey = (s: RecordingScope, sid: string) => `${scopeKey(s)}|${sid}`;
-
-function coerce(x: unknown): RRWebEvent {
-  return typeof x === "string" ? (JSON.parse(x) as RRWebEvent) : (x as RRWebEvent);
-}
-
-function chunkBounds(events: RRWebEvent[]) {
-  let first = 0;
-  let last = 0;
-  for (const ev of events) {
-    const ts = typeof ev.timestamp === "number" ? (ev.timestamp as number) : 0;
-    if (!first || (ts && ts < first)) first = ts;
-    if (ts > last) last = ts;
-  }
-  return { first, last };
-}
+export type { RRWebEvent };
 
 // ---- writes ---------------------------------------------------------------
 
+/**
+ * Store one flush of a live recording.
+ *
+ * Returns the number of events accepted — 0 when the site is unknown, the
+ * session has hit its event cap, or the write failed. It NEVER throws: this
+ * runs on a public beacon from someone's browser, and a database blip must
+ * cost that visitor's replay, not their page.
+ *
+ * The count check and the write are one transaction with the summary row
+ * locked, because chunks from a single visitor overlap: the recorder flushes
+ * on a timer AND immediately on a DOM snapshot, so two POSTs are routinely in
+ * flight together. Reading the count outside the lock would let both pass the
+ * cap check and both write.
+ */
 export async function addRecordingChunk(input: {
   tenantId: string;
   siteId: string;
@@ -98,93 +78,65 @@ export async function addRecordingChunk(input: {
   path: string;
   events: RRWebEvent[];
 }): Promise<number> {
-  const scope: RecordingScope = { tenantId: input.tenantId, siteId: input.siteId };
-  if (!scope.tenantId || !scope.siteId || !input.sessionId) return 0;
+  const { tenantId, siteId, sessionId } = input;
+  if (!tenantId || !siteId || !sessionId) return 0;
+  if (!input.events?.length) return 0;
 
-  const r = redisClient();
-  const sid = input.sessionId;
+  const blob = packChunk(input.events);
+  const { first, last } = chunkBounds(input.events);
+  const n = input.events.length;
 
-  if (r) {
-    try {
-      const existing = ((await r.llen(RKEY(scope, sid))) as number) ?? 0;
-      if (existing >= MAX_EVENTS_PER) return 0;
+  try {
+    return await tx(async (c) => {
+      // Lock this session's summary row, if it exists, for the duration.
+      const seen = await c.query<{ event_count: number }>(
+        `select event_count from recordings
+          where tenant_id = $1 and site_id = $2 and session_id = $3
+          for update`,
+        [tenantId, siteId, sessionId],
+      );
+      const already = seen.rows[0]?.event_count ?? 0;
+      if (already >= MAX_EVENTS_PER) return 0;
 
-      const { first, last } = chunkBounds(input.events);
-      if (input.events.length) {
-        await r.rpush(RKEY(scope, sid), ...input.events);
-        await r.ltrim(RKEY(scope, sid), -MAX_EVENTS_PER, -1);
-      }
+      await c.query(
+        `insert into recording_chunks
+           (tenant_id, site_id, session_id, n_events, size_bytes, events)
+         values ($1, $2, $3, $4, $5, $6)`,
+        [tenantId, siteId, sessionId, n, blob.length, blob],
+      );
 
-      // merge metadata (firstTs = earliest ever, lastTs = latest ever)
-      const prev = (await r.hgetall(MKEY(scope, sid))) as Record<string, string> | null;
-      const prevFirst = prev?.firstTs ? Number(prev.firstTs) : 0;
-      const prevLast = prev?.lastTs ? Number(prev.lastTs) : 0;
-      const firstTs = prevFirst && first ? Math.min(prevFirst, first) : prevFirst || first;
-      const lastTs = Math.max(prevLast, last);
-      await r.hset(MKEY(scope, sid), {
-        sessionId: sid,
-        tenantId: scope.tenantId,
-        siteId: scope.siteId,
-        device: input.device,
-        page: input.path,
-        firstTs,
-        lastTs,
-      });
-      await r.zadd(RECENCY(scope), { score: lastTs || 0, member: sid });
+      // `least`/`greatest` over NULLIF so a zero — "this chunk carried no
+      // usable timestamp" — never wins the earliest-ever comparison and dates
+      // the whole recording to 1970.
+      await c.query(
+        `insert into recordings
+           (tenant_id, site_id, session_id, object_key, device, page,
+            first_ts, last_ts, event_count, size_bytes, duration_ms)
+         values ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, 0)
+         on conflict (tenant_id, site_id, session_id) do update set
+           device      = excluded.device,
+           page        = excluded.page,
+           first_ts    = coalesce(least(nullif(recordings.first_ts, 0),
+                                        nullif(excluded.first_ts, 0)), 0),
+           last_ts     = greatest(recordings.last_ts, excluded.last_ts),
+           event_count = recordings.event_count + excluded.event_count,
+           size_bytes  = recordings.size_bytes + excluded.size_bytes,
+           duration_ms = greatest(
+             0,
+             greatest(recordings.last_ts, excluded.last_ts)
+               - coalesce(least(nullif(recordings.first_ts, 0),
+                                nullif(excluded.first_ts, 0)), 0)
+           )::integer,
+           updated_at  = now()`,
+        [tenantId, siteId, sessionId, input.device || "Desktop",
+         input.path || "/", first, last, n, blob.length],
+      );
 
-      // A single-event recording is a still frame, not a replay — the player
-      // requires >= 2 events, so only advertise it past that.
-      if (existing + input.events.length > 1) await r.sadd(IDS(scope), sid);
-
-      // evict this SITE's oldest sessions beyond capacity
-      const count = ((await r.zcard(RECENCY(scope))) as number) ?? 0;
-      if (count > MAX_RECORDINGS) {
-        const stale = (await r.zrange(RECENCY(scope), 0, count - MAX_RECORDINGS - 1)) as string[];
-        for (const old of stale) {
-          await r.del(RKEY(scope, old));
-          await r.del(MKEY(scope, old));
-          await r.srem(IDS(scope), old);
-          await r.zrem(RECENCY(scope), old);
-        }
-      }
-      return input.events.length;
-    } catch {
-      return 0; // best-effort — never fail the site's recording beacon
-    }
+      return n;
+    });
+  } catch {
+    return 0; // best-effort — never fail the site's recording beacon
   }
-
-  // ---- memory backend ----
-  const s = state();
-  const key = memKey(scope, sid);
-  let rec = s.map.get(key);
-  if (!rec) {
-    if (s.map.size >= MAX_RECORDINGS) {
-      const oldest = s.map.keys().next().value;
-      if (oldest) s.map.delete(oldest);
-    }
-    rec = {
-      sessionId: sid,
-      tenantId: scope.tenantId,
-      siteId: scope.siteId,
-      device: input.device,
-      page: input.path,
-      firstTs: 0,
-      lastTs: 0,
-      events: [],
-    };
-    s.map.set(key, rec);
-  }
-  if (rec.events.length >= MAX_EVENTS_PER) return 0;
-  for (const ev of input.events) {
-    const ts = typeof ev.timestamp === "number" ? (ev.timestamp as number) : 0;
-    if (!rec.firstTs || ts < rec.firstTs) rec.firstTs = ts;
-    if (ts > rec.lastTs) rec.lastTs = ts;
-    rec.events.push(ev);
-  }
-  // keep this session fresh (move to end for LRU-ish eviction)
-  s.map.delete(key);
-  s.map.set(key, rec);
-  return input.events.length;
 }
 
 // ---- reads ----------------------------------------------------------------
@@ -192,89 +144,103 @@ export async function addRecordingChunk(input: {
 /**
  * One session's replay, WITHIN a tenant+site.
  *
- * The scope is part of the lookup, not a check applied afterwards: a session id
- * belonging to another tenant simply does not resolve, so there is no path
+ * The scope is part of the lookup, not a check applied afterwards: a session
+ * id belonging to another tenant simply does not resolve, so there is no path
  * where a caller reads a recording and then forgets to compare owners.
+ *
+ * Events come back in playable order. Chunks are ordered by arrival here and
+ * then by their own timestamps in {@link orderEvents} — arrival order alone is
+ * not enough, because the POSTs race.
  */
 export async function getRecording(
   tenantId: string,
   siteId: string,
   sessionId: string,
 ): Promise<Recording | null> {
-  const scope: RecordingScope = { tenantId, siteId };
   if (!tenantId || !siteId || !sessionId) return null;
+  try {
+    const meta = await query<{
+      device: string; page: string; first_ts: string; last_ts: string;
+    }>(
+      `select device, page, first_ts, last_ts from recordings
+        where tenant_id = $1 and site_id = $2 and session_id = $3`,
+      [tenantId, siteId, sessionId],
+    );
+    if (!meta.length) return null;
 
-  const r = redisClient();
-  if (r) {
-    try {
-      const raw = (await r.lrange(RKEY(scope, sessionId), 0, -1)) as unknown[];
-      if (!raw || raw.length === 0) return null;
-      const meta = (await r.hgetall(MKEY(scope, sessionId))) as Record<string, string> | null;
-      return {
-        sessionId,
-        tenantId,
-        siteId,
-        device: meta?.device ?? "Desktop",
-        page: meta?.page ?? "/",
-        firstTs: meta?.firstTs ? Number(meta.firstTs) : 0,
-        lastTs: meta?.lastTs ? Number(meta.lastTs) : 0,
-        events: raw.map(coerce),
-      };
-    } catch {
-      return null;
-    }
+    const rows = await query<{ events: Buffer }>(
+      `select events from recording_chunks
+        where tenant_id = $1 and site_id = $2 and session_id = $3
+        order by created_at`,
+      [tenantId, siteId, sessionId],
+    );
+    // The summary row outlives its chunks by design: retention drops whole
+    // hypertable chunks, and the summary is a few hundred bytes worth keeping.
+    // An expired replay must read as absent, not as an empty one.
+    if (!rows.length) return null;
+
+    const events = orderEvents(rows.flatMap((r) => unpackChunk(r.events)));
+    if (!events.length) return null;
+
+    const m = meta[0];
+    return {
+      sessionId,
+      tenantId,
+      siteId,
+      device: m.device || "Desktop",
+      page: m.page || "/",
+      firstTs: Number(m.first_ts) || 0,
+      lastTs: Number(m.last_ts) || 0,
+      events,
+    };
+  } catch {
+    return null;
   }
-  return state().map.get(memKey(scope, sessionId)) ?? null;
 }
 
 /**
  * Session ids with a playable replay for this site — what the sessions and
  * visitors lists use to draw the "Watch" affordance.
+ *
+ * Bounded by the retention window and by `event_count > 1`. A single-event
+ * recording is a still frame, not a replay, and the player requires two; and a
+ * session whose chunks have aged out must not be offered, or the affordance
+ * promises something the store has already dropped.
  */
 export async function recordingIdsFor(
   tenantId: string,
   siteId: string,
 ): Promise<Set<string>> {
   if (!tenantId || !siteId) return new Set();
-  const scope: RecordingScope = { tenantId, siteId };
-  const r = redisClient();
-  if (r) {
-    try {
-      return new Set((await r.smembers(IDS(scope))) as string[]);
-    } catch {
-      return new Set();
-    }
+  try {
+    const rows = await query<{ session_id: string }>(
+      `select session_id from recordings
+        where tenant_id = $1 and site_id = $2
+          and event_count > 1
+          and started_at >= now() - ($3 || ' days')::interval`,
+      [tenantId, siteId, String(RETENTION_DAYS)],
+    );
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
   }
-  const out = new Set<string>();
-  const prefix = `${scopeKey(scope)}|`;
-  for (const [key, rec] of state().map) {
-    if (key.startsWith(prefix) && rec.events.length > 1) out.add(rec.sessionId);
-  }
-  return out;
 }
 
 /** Drop every replay for one site (admin / test helper). */
 export async function clearRecordings(tenantId: string, siteId: string): Promise<void> {
-  const scope: RecordingScope = { tenantId, siteId };
-  const r = redisClient();
-  if (r) {
-    try {
-      const ids = new Set<string>([
-        ...((await r.smembers(IDS(scope))) as string[]),
-        ...((await r.zrange(RECENCY(scope), 0, -1)) as string[]),
-      ]);
-      for (const sid of ids) {
-        await r.del(RKEY(scope, sid));
-        await r.del(MKEY(scope, sid));
-      }
-      await r.del(IDS(scope));
-      await r.del(RECENCY(scope));
-    } catch {
-      /* best-effort */
-    }
-  }
-  const prefix = `${scopeKey(scope)}|`;
-  for (const key of [...state().map.keys()]) {
-    if (key.startsWith(prefix)) state().map.delete(key);
+  if (!tenantId || !siteId) return;
+  try {
+    await tx(async (c) => {
+      await c.query(
+        `delete from recording_chunks where tenant_id = $1 and site_id = $2`,
+        [tenantId, siteId],
+      );
+      await c.query(
+        `delete from recordings where tenant_id = $1 and site_id = $2`,
+        [tenantId, siteId],
+      );
+    });
+  } catch {
+    /* best-effort */
   }
 }
