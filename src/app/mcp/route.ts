@@ -131,10 +131,28 @@ async function resolveSite(
   return { site };
 }
 
+/**
+ * Where this plugin is reachable, as the caller just reached it.
+ *
+ * Derived from the request rather than configured, because there is no
+ * env var for it and inventing one means a replay link that is wrong on every
+ * deployment where somebody forgot to set it. Behind a proxy the original host
+ * is in `x-forwarded-*`; `req.url` there is the internal container address, so
+ * a link built from it would open nothing from a browser.
+ */
+function publicOrigin(req: Request): string {
+  const h = req.headers;
+  const host = h.get("x-forwarded-host") || h.get("host") || "";
+  if (!host) return "";
+  const proto = (h.get("x-forwarded-proto") || "https").split(",")[0].trim();
+  return `${proto}://${host}`;
+}
+
 async function callTool(
   ctx: PluginContext,
   name: string,
   args: Record<string, unknown>,
+  origin = "",
 ): Promise<ReturnType<typeof toolText>> {
   // 7 days is right for a traffic chart and wrong for a person: somebody
   // asking what a customer did is usually looking at a complaint from last
@@ -215,7 +233,20 @@ async function callTool(
         id: r.id,
         replayId: r.replayId ?? null,
         hasRecording: !!r.hasRecording,
+        // The link, built here rather than by every caller. Only offered when
+        // there is something to play: a Watch button that opens the empty
+        // state is worse than no button, because somebody clicks it twice and
+        // then reports the player as broken.
+        replayUrl: r.hasRecording && r.replayId && origin
+          ? `${origin}/app/sessions/${encodeURIComponent(r.replayId)}`
+          + `?site=${encodeURIComponent(site.id)}`
+          : null,
         outcome: r.outcome,
+        // Absolute, in epoch milliseconds. A support agent reads these beside
+        // an order timestamp; "42 minutes ago" cannot answer "was this the
+        // visit where they tried to pay" without knowing when it was computed.
+        startedAt: r.startedAt,
+        endedAt: r.endedAt,
         startedMinutesAgo: r.startedMinutesAgo,
         durationSec: r.durationSec,
         pages: r.pages,
@@ -271,7 +302,7 @@ export async function POST(req: Request) {
       const args = (params?.arguments as Record<string, unknown>) ?? {};
       if (!name) return rpcError(id, -32602, "Missing tool name");
       try {
-        return rpcResult(id, await callTool(ctx, name, args));
+        return rpcResult(id, await callTool(ctx, name, args, publicOrigin(req)));
       } catch (e) {
         return rpcResult(id, {
           content: [{ type: "text", text: `Tool error: ${(e as Error).message}` }],

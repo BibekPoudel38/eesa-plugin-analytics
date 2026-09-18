@@ -9,8 +9,17 @@ import { listSites, type Site } from "@/lib/db/sites";
  * cookies the bridge set. Returns:
  *   • authed=false when there's no valid Eesa token yet (render a connecting
  *     state; the client bridge will set the cookie and refresh);
- *   • authed=true with the tenant's sites and the active site (from the
- *     `eesa_site` cookie, else the first site, else null when none exist yet).
+ *   • authed=true with the tenant's sites and the active site.
+ *
+ * The active site is `preferSiteId` when given and the tenant owns it, else
+ * the `eesa_site` cookie, else the first site, else null when none exist yet.
+ *
+ * `preferSiteId` exists for DEEP LINKS. A link into one session — from Eesa's
+ * Customer 360 page, or pasted to a colleague — names the site it belongs to,
+ * and without it the page would resolve whichever site that particular
+ * person's cookie happened to hold and report the session as not found. It is
+ * matched against the tenant's OWN sites, so naming another tenant's site id
+ * simply falls through to the cookie rather than resolving anything.
  */
 export interface Scope {
   authed: boolean;
@@ -21,7 +30,7 @@ export interface Scope {
 
 const UNAUTHED: Scope = { authed: false, tenantId: "", sites: [], site: null };
 
-export async function currentScope(): Promise<Scope> {
+export async function currentScope(preferSiteId?: string): Promise<Scope> {
   const jar = await cookies();
   let tenantId: string | null = null;
 
@@ -41,10 +50,9 @@ export async function currentScope(): Promise<Scope> {
 
   const sites = await listSites(tenantId);
   const activeId = jar.get(SITE_COOKIE)?.value;
-  const site =
-    (activeId ? sites.find((s) => s.id === activeId) : undefined) ??
-    sites[0] ??
-    null;
+  const pick = (id: string | undefined) =>
+    id ? sites.find((s) => s.id === id) : undefined;
+  const site = pick(preferSiteId) ?? pick(activeId) ?? sites[0] ?? null;
 
   return { authed: true, tenantId, sites, site };
 }
