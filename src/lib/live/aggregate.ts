@@ -585,6 +585,35 @@ export function liveSessions(
     .map((s) => toRow(s, recIds, now));
 }
 
+/**
+ * Every session belonging to ONE identified person, newest first.
+ *
+ * WHY THIS IS NOT `liveSessions(...).filter(...)`
+ * `liveSessions` slices to the 24 most recent sessions on the whole site
+ * BEFORE building rows. Filtering after that answers "did this person appear in
+ * the last 24 visits anybody made", which on a busy site is almost always no —
+ * and would have looked like the person simply had no sessions rather than like
+ * a bug. So this filters first and caps afterwards.
+ *
+ * `userId` is whatever the site passed to identify(); it is opaque here. The
+ * match is exact and case-insensitive: these are ids, not names, and a prefix
+ * match would let CUS-1 answer for CUS-1042.
+ */
+export function sessionsForUser(
+  userId: string,
+  now = Date.now(),
+  evs?: StoredEvent[],
+  recIds: Set<string> = new Set(),
+  limit = 25,
+): SessionRow[] {
+  const want = String(userId || "").trim().toLowerCase();
+  if (!want) return [];
+  return sessionize(evs ?? allEvents())
+    .filter((s) => (s.userId || "").trim().toLowerCase() === want)
+    .slice(0, Math.max(1, limit))
+    .map((s) => toRow(s, recIds, now));
+}
+
 export function liveSessionDetail(
   id: string,
   now = Date.now(),
