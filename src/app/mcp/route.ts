@@ -1,6 +1,7 @@
 import { verify, requireGateway, AuthError, type PluginContext } from "@/lib/eesa/auth";
 import { listSites, type Site } from "@/lib/db/sites";
 import { loadEvents } from "@/lib/db/load";
+import { recordingIdsFor } from "@/lib/live/recordings";
 import * as agg from "@/lib/live/aggregate";
 import { computeFunnel, type FunnelStepDef } from "@/lib/live/funnel";
 import { rangeDays } from "@/lib/ranges";
@@ -55,6 +56,30 @@ const TOOLS = [
       required: ["steps"],
     },
   },
+  {
+    name: "person_sessions",
+    description:
+      "Recorded sessions for ONE known person, newest first — what they did, "
+      + "how long they stayed, whether they rage-clicked, whether it converted, "
+      + "and the replay id where a recording exists. `person` is the id the "
+      + "site passed to identify() (for Chups, a customer id like CUS-045). "
+      + "Returns JSON. Anonymous visits are never returned: a session with no "
+      + "identity belongs to nobody in particular and guessing would attribute "
+      + "a stranger's browsing to a named customer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        person: {
+          type: "string",
+          description: "The id the site passed to identify(), e.g. CUS-045.",
+        },
+        site: { type: "string" },
+        range: { type: "string", description: "24h, 7d, 30d, 90d. Default 30d." },
+        limit: { type: "integer", description: "Max sessions. Default 25." },
+      },
+      required: ["person"],
+    },
+  },
 ];
 
 function rpcResult(id: unknown, result: unknown) {
@@ -65,6 +90,22 @@ function rpcError(id: unknown, code: number, message: string, status = 200) {
 }
 function toolText(text: string) {
   return { content: [{ type: "text", text }] };
+}
+
+/**
+ * A machine-readable result.
+ *
+ * The other three tools answer an agent, so prose is right for them. This
+ * one answers a SCREEN — the Customer 360 page renders the rows — and a
+ * sentence would have to be parsed back apart at the other end. The payload
+ * goes in both places: `structuredContent` for clients that read it, and the
+ * same JSON as text for those that do not, so neither has to guess.
+ */
+function toolJson(payload: unknown) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload) }],
+    structuredContent: payload as Record<string, unknown>,
+  };
 }
 
 async function resolveSite(
@@ -95,7 +136,11 @@ async function callTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<ReturnType<typeof toolText>> {
-  const range = typeof args.range === "string" ? args.range : "7d";
+  // 7 days is right for a traffic chart and wrong for a person: somebody
+  // asking what a customer did is usually looking at a complaint from last
+  // week, and an empty answer would read as "they never visited".
+  const defaultRange = name === "person_sessions" ? "30d" : "7d";
+  const range = typeof args.range === "string" ? args.range : defaultRange;
   const siteArg = typeof args.site === "string" ? args.site : undefined;
   const resolved = await resolveSite(ctx.tenantId, siteArg);
   if ("error" in resolved) return toolText(resolved.error);
@@ -147,6 +192,45 @@ async function callTool(
           )
           .join("\n"),
     );
+  }
+
+  if (name === "person_sessions") {
+    const person = typeof args.person === "string" ? args.person.trim() : "";
+    if (!person) return toolJson({ person: "", sessions: [], error: "person is required." });
+    const limit = Number.isFinite(args.limit as number)
+      ? Math.max(1, Math.min(100, Number(args.limit)))
+      : 25;
+    const recIds = await recordingIdsFor(ctx.tenantId, site.id);
+    const rows = agg.sessionsForUser(person, Date.now(), evs, recIds, limit);
+    return toolJson({
+      person,
+      site: site.name,
+      // The window is a PROPERTY OF THE ANSWER, not a footnote: the store is
+      // a rolling window, so "no sessions" means "none in this range" and a
+      // caller that does not know the range cannot tell that apart from
+      // "this person has never visited".
+      range,
+      found: rows.length,
+      sessions: rows.map((r) => ({
+        id: r.id,
+        replayId: r.replayId ?? null,
+        hasRecording: !!r.hasRecording,
+        outcome: r.outcome,
+        startedMinutesAgo: r.startedMinutesAgo,
+        durationSec: r.durationSec,
+        pages: r.pages,
+        events: r.events,
+        rageClicks: r.rageClicks,
+        device: r.device,
+        browser: r.browser,
+        os: r.os ?? null,
+        location: r.location,
+        source: r.source ?? null,
+        path: r.path,
+        inCart: !!r.inCart,
+        completed: !!r.completed,
+      })),
+    });
   }
 
   return toolText(`Unknown tool: ${name}`);

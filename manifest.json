@@ -43,6 +43,10 @@
         {
           "name": "funnel_report",
           "description": "Conversion rate and per-step drop-off for a named funnel on a site."
+        },
+        {
+          "name": "person_sessions",
+          "description": "Recorded sessions for ONE known person, newest first — what they did, how long they stayed, whether they rage-clicked, whether it converted, and the replay id where a recording exists."
         }
       ]
     }
