@@ -5,6 +5,8 @@ import { recordingIdsFor } from "@/lib/live/recordings";
 import * as agg from "@/lib/live/aggregate";
 import { computeFunnel, type FunnelStepDef } from "@/lib/live/funnel";
 import { rangeDays } from "@/lib/ranges";
+import { loadPulse } from "@/lib/db/pulse";
+import { shapePulse } from "@/lib/live/pulse";
 
 // MCP surface for the Eesa agent. Minimal JSON-RPC: initialize,
 // notifications/initialized, tools/list, tools/call. Gateway-secret + mcp-surface
@@ -80,6 +82,22 @@ const TOOLS = [
       required: ["person"],
     },
   },
+  {
+    name: "site_pulse",
+    description:
+      "Is anybody reaching the site right now? JSON: when the last visitor event "
+      + "arrived (lastEventAt, quietSec), events in the last hour (lastHour), and "
+      + "how long the longest quiet spell usually is at the hour this one began "
+      + "(usualQuietSec: the median over the last 14 days of each day's longest "
+      + "spell, over `days` days). Facts only — deciding what is too quiet is the "
+      + "caller's. Eesa's website watch reads it every few minutes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Site name, domain or id (optional if the workspace has one site)." },
+      },
+    },
+  },
 ];
 
 function rpcResult(id: unknown, result: unknown) {
@@ -95,9 +113,10 @@ function toolText(text: string) {
 /**
  * A machine-readable result.
  *
- * The other three tools answer an agent, so prose is right for them. This
- * one answers a SCREEN — the Customer 360 page renders the rows — and a
- * sentence would have to be parsed back apart at the other end. The payload
+ * The report tools answer an agent, so prose is right for them. These answer
+ * a SCREEN or a MACHINE — the Customer 360 page renders person_sessions' rows,
+ * Eesa's website watch reads site_pulse's numbers — and a sentence would have
+ * to be parsed back apart at the other end. The payload
  * goes in both places: `structuredContent` for clients that read it, and the
  * same JSON as text for those that do not, so neither has to guess.
  */
@@ -163,6 +182,12 @@ async function callTool(
   const resolved = await resolveSite(ctx.tenantId, siteArg);
   if ("error" in resolved) return toolText(resolved.error);
   const site = resolved.site;
+  // Before the events are loaded: a pulse is asked every few minutes and is
+  // answered in the database, so it must never pull a week of events into
+  // this process to count them.
+  if (name === "site_pulse") {
+    return toolJson(shapePulse(await loadPulse(ctx.tenantId, site.id, site.timezone), site, Date.now()));
+  }
   const since = Date.now() - rangeDays(range) * DAY;
   const evs = await loadEvents(ctx.tenantId, site.id, since);
 
